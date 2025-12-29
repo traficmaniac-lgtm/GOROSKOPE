@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
-.venv/
+*.pyo
+*.env
+.bot.log
+bot.log
 .env
-logs/
-data/db.json
