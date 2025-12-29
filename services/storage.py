@@ -18,7 +18,7 @@ def _connect() -> sqlite3.Connection:
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
     cur = conn.execute(
-        "SELECT name FROM pragma_table_info(?) WHERE name = ?", (table, column)
+        f"SELECT name FROM pragma_table_info('{table}') WHERE name = ?", (column,)
     )
     if not cur.fetchone():
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
@@ -28,23 +28,21 @@ def init_storage() -> None:
     Path(config.DATA_DIR).mkdir(parents=True, exist_ok=True)
     with _connect() as conn:
         conn.execute(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
-                free_remaining INTEGER DEFAULT ?,
+                free_remaining INTEGER DEFAULT {int(config.DEFAULT_FREE_REQUESTS)},
                 stars_balance INTEGER DEFAULT 0,
                 subscription_until INTEGER DEFAULT 0,
-                settings_json TEXT DEFAULT '{}'
+                settings_json TEXT DEFAULT '{{}}'
             )
-            """,
-            (config.DEFAULT_FREE_REQUESTS,),
+            """
         )
 
         _ensure_column(conn, "users", "stars_balance", "INTEGER DEFAULT 0")
         _ensure_column(conn, "users", "subscription_until", "INTEGER DEFAULT 0")
         _ensure_column(conn, "users", "settings_json", "TEXT DEFAULT '{}' ")
         _ensure_column(conn, "users", "free_remaining", "INTEGER DEFAULT 0")
-        _ensure_column(conn, "history", "is_favorite", "INTEGER DEFAULT 0")
 
         conn.execute(
             """
@@ -63,6 +61,8 @@ def init_storage() -> None:
             )
             """
         )
+
+        _ensure_column(conn, "history", "is_favorite", "INTEGER DEFAULT 0")
 
         conn.execute(
             """
