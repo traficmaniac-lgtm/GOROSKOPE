@@ -56,9 +56,12 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("week", week))
     app.add_handler(CommandHandler("reset", reset_profile))
     app.add_handler(CommandHandler("profile", show_profile))
+    app.add_handler(CommandHandler("me", show_profile))
     app.add_handler(CommandHandler("grant", grant_subscription))
     app.add_handler(CommandHandler("test", test_openai))
     app.add_handler(CommandHandler("ping", ping))
+
+    app.add_error_handler(error_handler)
 
     return app
 
@@ -203,6 +206,12 @@ async def grant_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
     until_ts = storage.grant_subscription(int(target_id), int(days))
     until_text = datetime.fromtimestamp(until_ts).strftime("%d.%m.%Y")
     await update.message.reply_text(f"Подписка пользователю {target_id} до {until_text}")
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.exception("Unhandled exception while handling update", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text("Упс, что-то пошло не так. Попробуй ещё раз позже.")
 
 
 def main() -> None:

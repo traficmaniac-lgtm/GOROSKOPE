@@ -5,7 +5,7 @@ import re
 from typing import Dict
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.ext import CallbackContext, CommandHandler, ConversationHandler, MessageHandler, filters
+from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from app import storage
 
@@ -67,107 +67,136 @@ def zodiac_from_date(date_str: str) -> str:
     return ""
 
 
-def _get_draft(update: Update, context: CallbackContext) -> Dict:
+def _get_draft(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Dict:
     if "profile_draft" not in context.user_data:
         user = storage.get_user(update.effective_user.id)
         context.user_data["profile_draft"] = storage.Profile.from_dict(user.get("profile"))
     return context.user_data["profile_draft"]
 
 
-def start_profile(update: Update, context: CallbackContext) -> int:
+async def start_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     storage.get_user(update.effective_user.id)
     greeting = (
         "🔮 Добро пожаловать в GOROSKOPE!\n"
         "Я астрологичный ассистент: вдохновляю, но не обещаю чудес.\n"
-        "FAQ: /today — прогноз на день, /week — на неделю, /profile — профиль, /reset — сброс."
+        "FAQ: /today — прогноз на день, /week — на неделю, /profile или /me — профиль, /reset — сброс."
     )
     faq = "Давай настроим профиль. Можешь пропускать шаги. Как тебя зовут?"
-    update.message.reply_text(f"{greeting}\n\n{faq}", reply_markup=_skip_keyboard())
+    if update.message:
+        await update.message.reply_text(f"{greeting}\n\n{faq}", reply_markup=_skip_keyboard())
     context.user_data["profile_draft"] = storage.Profile()
     return NAME
 
 
-def name_step(update: Update, context: CallbackContext) -> int:
+async def name_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip()
     draft.name = "" if text == SKIP_TEXT else text
-    update.message.reply_text("Пол (опционально)", reply_markup=_choices_keyboard(GENDER_OPTIONS))
+    if update.message:
+        await update.message.reply_text("Пол (опционально)", reply_markup=_choices_keyboard(GENDER_OPTIONS))
     return GENDER
 
 
-def gender_step(update: Update, context: CallbackContext) -> int:
+async def gender_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip()
     draft.gender = "" if text == SKIP_TEXT else text
-    update.message.reply_text("Дата рождения (дд.мм.гггг)", reply_markup=_skip_keyboard())
+    if update.message:
+        await update.message.reply_text("Дата рождения (дд.мм.гггг)", reply_markup=_skip_keyboard())
     return BIRTH_DATE
 
 
-def birth_date_step(update: Update, context: CallbackContext) -> int:
+async def birth_date_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip()
     if text != SKIP_TEXT:
         if not re.match(r"^\d{2}\.\d{2}\.\d{4}$", text):
-            update.message.reply_text("Введите дату в формате дд.мм.гггг или нажмите 'Пропустить'.", reply_markup=_skip_keyboard())
+            if update.message:
+                await update.message.reply_text(
+                    "Введите дату в формате дд.мм.гггг или нажмите 'Пропустить'.",
+                    reply_markup=_skip_keyboard(),
+                )
             return BIRTH_DATE
         draft.birth_date = text
         auto_sign = zodiac_from_date(text)
         if auto_sign and not draft.sign:
             draft.sign = auto_sign
-    update.message.reply_text("Время рождения (чч:мм, можно пропустить)", reply_markup=_skip_keyboard())
+    if update.message:
+        await update.message.reply_text(
+            "Время рождения (чч:мм, можно пропустить)", reply_markup=_skip_keyboard()
+        )
     return BIRTH_TIME
 
 
-def birth_time_step(update: Update, context: CallbackContext) -> int:
+async def birth_time_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip()
     if text != SKIP_TEXT:
         if not re.match(r"^\d{2}:\d{2}$", text):
-            update.message.reply_text("Введите время в формате чч:мм или нажмите 'Пропустить'.", reply_markup=_skip_keyboard())
+            if update.message:
+                await update.message.reply_text(
+                    "Введите время в формате чч:мм или нажмите 'Пропустить'.",
+                    reply_markup=_skip_keyboard(),
+                )
             return BIRTH_TIME
         draft.birth_time = text
-    update.message.reply_text("Город/страна рождения или текущий город", reply_markup=_skip_keyboard())
+    if update.message:
+        await update.message.reply_text(
+            "Город/страна рождения или текущий город", reply_markup=_skip_keyboard()
+        )
     return CITY
 
 
-def city_step(update: Update, context: CallbackContext) -> int:
+async def city_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip()
     draft.city = "" if text == SKIP_TEXT else text
-    update.message.reply_text("Твой знак зодиака?", reply_markup=_choices_keyboard(ZODIAC_SIGNS))
+    if update.message:
+        await update.message.reply_text("Твой знак зодиака?", reply_markup=_choices_keyboard(ZODIAC_SIGNS))
     return SIGN
 
 
-def sign_step(update: Update, context: CallbackContext) -> int:
+async def sign_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip()
     if text not in ZODIAC_SIGNS:
-        update.message.reply_text("Пожалуйста выбери знак кнопкой ниже.", reply_markup=_choices_keyboard(ZODIAC_SIGNS))
+        if update.message:
+            await update.message.reply_text(
+                "Пожалуйста выбери знак кнопкой ниже.", reply_markup=_choices_keyboard(ZODIAC_SIGNS)
+            )
         return SIGN
     draft.sign = text
-    update.message.reply_text("Выбери тему дня", reply_markup=_choices_keyboard(THEME_OPTIONS))
+    if update.message:
+        await update.message.reply_text("Выбери тему дня", reply_markup=_choices_keyboard(THEME_OPTIONS))
     return THEME
 
 
-def theme_step(update: Update, context: CallbackContext) -> int:
+async def theme_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     draft = _get_draft(update, context)
     text = (update.message.text or "").strip().lower()
     if text not in THEME_OPTIONS:
-        update.message.reply_text("Используй кнопки для выбора темы.", reply_markup=_choices_keyboard(THEME_OPTIONS))
+        if update.message:
+            await update.message.reply_text(
+                "Используй кнопки для выбора темы.", reply_markup=_choices_keyboard(THEME_OPTIONS)
+            )
         return THEME
     draft.theme = text
     storage.update_profile(update.effective_user.id, draft)
 
     summary = storage.profile_summary(draft)
-    update.message.reply_text(
-        f"Профиль сохранён!\n\n{summary}\n\nИспользуй /today или /week.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+    if update.message:
+        await update.message.reply_text(
+            f"Профиль сохранён!\n\n{summary}\n\nИспользуй /today или /week.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
     return ConversationHandler.END
 
 
-def cancel(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text("Окей, профиль можно настроить позже командой /start.", reply_markup=ReplyKeyboardRemove())
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message:
+        await update.message.reply_text(
+            "Окей, профиль можно настроить позже командой /start.", reply_markup=ReplyKeyboardRemove()
+        )
     return ConversationHandler.END
 
 
