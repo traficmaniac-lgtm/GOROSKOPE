@@ -249,8 +249,7 @@ async def skip_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 def _build_cost_info(flow: Dict, user_row: Dict) -> tuple[int, int, bool]:
     free_left = int(user_row.get("free_remaining", 0))
     subscription = sql_storage.subscription_active(user_row)
-    base = BASE_COST.get(flow.get("format", ""), 1)
-    stars_price = round(base * 3)
+    stars_price = 3
     if subscription:
         return 0, stars_price, subscription
     if flow.get("format") != "personal" and free_left > 0:
@@ -332,15 +331,20 @@ async def run_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     flow["stars_price"] = stars_price
     flow["free_left"] = int(user_row.get("free_remaining", 0))
     flow["subscription"] = subscription
+    prepaid = bool(flow.pop("prepaid", False))
+    prepaid_amount = int(flow.pop("prepaid_amount", cost if prepaid else 0))
+
+    if prepaid:
+        cost = prepaid_amount
 
     if not _has_profile(user_id):
         await _render_profile_needed(update)
         return SELECT_FORMAT
 
-    if not subscription and flow["free_left"] == 0 and cost:
+    if not subscription and flow["free_left"] == 0 and cost and not prepaid:
         return await _render_paywall(update, cost)
 
-    if cost and not subscription:
+    if cost and not subscription and not prepaid:
         if int(user_row.get("stars_balance", 0)) < cost:
             return await _render_paywall(update, cost)
         sql_storage.adjust_balance(user_id, stars_delta=-cost)
@@ -387,8 +391,19 @@ async def pay_with_stars(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     price = int(flow.get("pending_cost") or flow.get("stars_price") or 0)
     if update.callback_query:
         await update.callback_query.answer()
-    if price > 0:
-        sql_storage.adjust_balance(update.effective_user.id, stars_delta=price)
+    user_row = sql_storage.get_user(update.effective_user.id)
+    balance = int(user_row.get("stars_balance", 0))
+    if balance < price:
+        if update.effective_message:
+            await update.effective_message.edit_text(
+                "Недостаточно звёзд. Попробуй подписку или пополнение.",
+                reply_markup=_paywall_keyboard(),
+            )
+        return PAYWALL
+
+    sql_storage.adjust_balance(update.effective_user.id, stars_delta=-price)
+    flow["prepaid"] = True
+    flow["prepaid_amount"] = price
     return await run_forecast(update, context)
 
 
