@@ -1,42 +1,45 @@
 # GOROSKOPE
 
-Простой Telegram-бот и Tkinter UI для тестового гороскопного MVP.
+Telegram-бот и Tkinter UI для быстрого MVP гороскопов.
 
 ## Что понадобится
 - Python 3.11+
-- Токен Telegram Bot (получить у [BotFather](https://t.me/BotFather) → `/newbot` → скопируйте `HTTP API token`).
-- `ADMIN_TELEGRAM_ID` — ваш числовой user_id (узнать через бота [@userinfobot](https://t.me/userinfobot) или [@getmyid_bot](https://t.me/getmyid_bot)).
-- Ключ OpenAI API.
+- Токен Telegram Bot (BotFather → `/newbot` → HTTP API token)
+- `ADMIN_TELEGRAM_ID` — числовой `user_id` (узнать через @getmyid_bot)
+- Ключ OpenAI API (Responses API, openai>=2)
 
-## Настройка через UI
-1. Создайте (по желанию) виртуальное окружение `.venv` и установите зависимости:
+## Установка
+1. (Опционально) создать виртуальное окружение `.venv` и установить зависимости:
    ```bash
    python -m venv .venv
    .venv/Scripts/activate  # Windows PowerShell
    pip install -r requirements.txt
    ```
-2. Запустите `run_ui.bat` (двойной клик) или `python -m ui.settings_ui`.
-3. В окне UI заполните поля:
-   - `TELEGRAM_BOT_TOKEN`
-   - `OPENAI_API_KEY`
-   - `OPENAI_MODEL` (по умолчанию `gpt-4o-mini`)
-   - `ADMIN_TELEGRAM_ID`
-4. Нажмите **Save** — будет создан/обновлён `.env`.
-5. Кнопкой **Test OpenAI** отправьте тестовый запрос (ожидается ответ `OK`).
-6. Кнопкой **Run Bot** можно запустить бота напрямую из UI, **Stop Bot** — остановить.
+2. Двойной клик по `run_ui.bat` (или `python -m ui.settings_ui`).
+3. В UI заполнить `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `OPENAI_MODEL` (по умолчанию `gpt-4o-mini`), `ADMIN_TELEGRAM_ID` и нажать **Save**.
+4. Кнопкой **Test OpenAI** отправить тест — ожидается ответ `OK`.
+5. Кнопками **Run Bot / Stop Bot** запускать и останавливать бота.
+
+Если `.venv` отсутствует, батники подскажут запустить `00_setup_repo.ps1`.
 
 ## Запуск бота напрямую
 - Двойной клик по `run_bot.bat`, либо
-- В терминале: `python -m app.bot`
+- `python -m app.bot`
 
-## Логика бота (MVP)
-- `/start` — приветствие, краткий FAQ и предложение выбрать знак зодиака.
-- Пользователь выбирает знак кнопками. Гороскоп генерируется на один день.
-- Первые 3 запроса бесплатно, затем сообщение-заглушка «Скоро подписка ✨».
+## Логика бота
+- `/start` — приветствие + FAQ, далее анкета (имя, пол, дата/время рождения, город, знак, тема дня).
+- `/today` — прогноз на сегодня.
+- `/week` — прогноз на неделю.
+- `/profile` — показать профиль и лимиты.
+- `/reset` — сброс анкеты и счётчиков.
+- `/grant <user_id> <days>` — продление подписки (только для `ADMIN_TELEGRAM_ID`).
+
+Первые 3 прогноза бесплатно для каждого `user_id`. Далее — заглушка про оплату/связь. Активная подписка хранится в `sub_until` и снимает ограничения. Прогнозы генерируются через OpenAI Responses API с тёплым астрологическим тоном.
 
 ## Хранилище
-- `data/db.json` (создаётся автоматически) — хранит пользователей: `user_id`, `zodiac`, `birth_date` (опционально), `free_uses`, `created_at`.
+- `data/db.json` (автосоздание, в .gitignore) — хранит профиль, `free_uses`, `sub_until`.
 
 ## Полезно знать
-- `.env` и `data/db.json` в `.gitignore` — ключи не попадут в репозиторий.
-- Минимум зависимостей, OpenAI вызывается через Responses API.
+- `.env` в корне. Создаётся UI.
+- Минимальный набор зависимостей: `python-telegram-bot 22.x`, `openai>=2`, `python-dotenv`.
+- UI останавливает процесс бота через `terminate/kill`.

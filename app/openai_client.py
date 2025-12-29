@@ -5,7 +5,7 @@ from typing import Any
 
 from openai import OpenAI
 
-MIN_OUTPUT_TOKENS = 128
+MIN_OUTPUT_TOKENS = 200
 
 
 def get_text(response: Any) -> str:
@@ -37,7 +37,7 @@ class OpenAIClient:
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
-    def ask(self, prompt: str, max_output_tokens: int = 256) -> str:
+    def ask(self, prompt: str, max_output_tokens: int = 400) -> str:
         response = self.client.responses.create(
             model=self.model,
             input=prompt,
@@ -46,4 +46,4 @@ class OpenAIClient:
         return get_text(response)
 
     def test_greeting(self) -> str:
-        return self.ask("Say OK", max_output_tokens=MIN_OUTPUT_TOKENS)
+        return self.ask("Ответь коротко: OK", max_output_tokens=MIN_OUTPUT_TOKENS)

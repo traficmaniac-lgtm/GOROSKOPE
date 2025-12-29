@@ -152,10 +152,15 @@ class SettingsApp:
     def stop_bot(self) -> None:
         if self.bot_process and self.bot_process.poll() is None:
             self.bot_process.terminate()
-            self.bot_process.wait(timeout=5)
+            try:
+                self.bot_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.bot_process.kill()
+                self.bot_process.wait(timeout=3)
             self._log("Бот остановлен.")
         else:
             self._log("Бот не запущен.")
+        self.bot_process = None
 
 
 def main() -> None:
