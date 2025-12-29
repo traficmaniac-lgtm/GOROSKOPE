@@ -68,6 +68,13 @@ class LauncherGUI:
         btn_save.grid(row=len(labels), column=0, pady=6, sticky=tk.W)
         btn_validate = ttk.Button(frame, text="Проверить .env", command=self._validate_env)
         btn_validate.grid(row=len(labels), column=1, pady=6, sticky=tk.W)
+        ttk.Button(frame, text="Проверить OpenAI", command=self._check_openai).grid(
+            row=len(labels) + 1, column=0, pady=6, sticky=tk.W
+        )
+        self.openai_status = tk.StringVar()
+        ttk.Label(frame, textvariable=self.openai_status, foreground="blue").grid(
+            row=len(labels) + 1, column=1, sticky=tk.W
+        )
         return frame
 
     def _load_env_values(self) -> None:
@@ -108,6 +115,28 @@ class LauncherGUI:
             messagebox.showwarning("Проблемы", "\n".join(errors))
         else:
             messagebox.showinfo("OK", "Настройки выглядят корректно")
+
+    def _check_openai(self) -> None:
+        self.openai_status.set("Выполняю запрос...")
+        req = HoroscopeRequest(
+            mode="Технический пинг",
+            birth_date="01.01.2000",
+            birth_time=None,
+            birth_place="Москва",
+            gender="gender_o",
+            focus="focus_general",
+        )
+        prompt = build_horoscope_prompt(req)
+
+        async def _run() -> str:
+            resolution = resolve_ai_service()
+            return await resolution.service.generate(prompt)
+
+        try:
+            result = asyncio.run(_run())
+            self.openai_status.set(result[:180] + ("..." if len(result) > 180 else ""))
+        except Exception as exc:  # pragma: no cover - runtime guard
+            self.openai_status.set(f"Ошибка: {exc}")
 
     # --- Test AI tab
     def _tab_test_ai(self, parent: ttk.Notebook) -> ttk.Frame:
@@ -160,7 +189,9 @@ class LauncherGUI:
             return
         prompt = build_horoscope_prompt(req)
         self.prompt_box.delete("1.0", tk.END)
-        self.prompt_box.insert(tk.END, prompt)
+        self.prompt_box.insert(
+            tk.END, f"SYSTEM:\n{prompt.system_prompt}\n\nUSER:\n{prompt.user_prompt}"
+        )
 
     def _call_ai(self) -> None:
         self.ai_error.set("")
@@ -171,10 +202,10 @@ class LauncherGUI:
 
         async def _run() -> None:
             try:
-                ai_service = resolve_ai_service()
-                result = await ai_service.generate(prompt)
+                ai_resolution = resolve_ai_service()
+                result = await ai_resolution.service.generate(prompt)
                 self.ai_output.delete("1.0", tk.END)
-                self.ai_output.insert(tk.END, result)
+                self.ai_output.insert(tk.END, f"[{ai_resolution.mode}]\n{result}")
             except Exception as exc:  # pragma: no cover - runtime guard
                 self.ai_error.set(str(exc))
 

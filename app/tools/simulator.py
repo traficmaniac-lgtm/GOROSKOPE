@@ -36,7 +36,7 @@ class HoroscopeSimulator:
     def __init__(self) -> None:
         self.state = SimulationState()
         self.db = Database(settings.db_path)
-        self.ai_service = resolve_ai_service()
+        self.ai_service = resolve_ai_service().service
         self.quota_service = QuotaService(self.db, free_quota=runtime_config.free_quota)
         self._init_lock = asyncio.Lock()
 

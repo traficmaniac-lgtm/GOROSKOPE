@@ -1,8 +1,10 @@
+from app.config.runtime import runtime_config
+
 WELCOME = (
     "Привет! Я бот 'Гороскоп'. Помогу получить прогноз. Выберите раздел в меню ниже."
 )
 ABOUT = "Бот для получения гороскопов. Используется aiogram 3.x и SQLite."
-SETTINGS = "Настройки скоро появятся."
+SETTINGS = "Настройки и проверки подключения OpenAI находятся здесь."
 BALANCE = "Ваш баланс бесплатных запросов: {free_left}"
 LIMIT_REACHED = (
     "Вы исчерпали бесплатные запросы. Можно будет купить дополнительный запрос или оформить подписку."
@@ -18,6 +20,7 @@ INVALID_TIME = "Неверный формат времени. Используй
 NATAL_SOON = "Натальная карта скоро будет доступна."
 PROCESSING = "Готовлю ваш прогноз..."
 GENERATION_ERROR = "Не удалось получить ответ. Попробуйте позже."
+GENERATION_STUB_NOTICE = "Бот работает в демо-режиме (OpenAI отключён)."
 
 
 def _apply_overrides() -> None:
@@ -28,4 +31,3 @@ def _apply_overrides() -> None:
 
 
 _apply_overrides()
-from app.config.runtime import runtime_config

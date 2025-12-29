@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.modules.horoscope.prompts import HOROSCOPE_TEMPLATE
 from app.config.runtime import runtime_config
+from app.modules.horoscope.prompts import HOROSCOPE_TEMPLATE
 
 
-@dataclass
+@dataclass(slots=True)
 class HoroscopeRequest:
     mode: str
     birth_date: str
@@ -14,6 +14,12 @@ class HoroscopeRequest:
     birth_place: str
     gender: str
     focus: str
+
+
+@dataclass(slots=True)
+class BuiltPrompt:
+    system_prompt: str
+    user_prompt: str
 
 
 FOCUS_LABELS = {
@@ -31,11 +37,25 @@ GENDER_LABELS = {
 }
 
 
-def build_horoscope_prompt(req: HoroscopeRequest) -> str:
+def build_horoscope_prompt(req: HoroscopeRequest) -> BuiltPrompt:
     focus = FOCUS_LABELS.get(req.focus, "общее")
     gender = GENDER_LABELS.get(req.gender, "")
     time_info = req.birth_time if req.birth_time else "неизвестно"
-    prompt = HOROSCOPE_TEMPLATE.format(
+
+    style = runtime_config.prompt_style
+    tone = style.get("tone")
+    bullets = style.get("bullets_count") or style.get("bullets") or 6
+
+    system_prompt = (
+        "Ты опытный астролог и психолог. Отвечай по-русски, вежливо и без шарлатанства. "
+        "Не давай медицинских диагнозов, избегай упоминаний о магии и эзотерике. "
+        "Формат ответа — структурированный список из 6-10 пунктов с короткими заголовками: "
+        "Любовь, Финансы, Здоровье, Карьера, Совет дня."
+    )
+    if tone:
+        system_prompt = f"{system_prompt} Тон: {tone}."
+
+    user_prompt = HOROSCOPE_TEMPLATE.format(
         mode=req.mode,
         birth_date=req.birth_date,
         birth_time=time_info,
@@ -43,14 +63,11 @@ def build_horoscope_prompt(req: HoroscopeRequest) -> str:
         gender=gender,
         focus=focus,
     )
-    style = runtime_config.prompt_style
-    tone = style.get("tone")
-    bullets = style.get("bullets_count") or style.get("bullets")
-    additions = []
-    if tone:
-        additions.append(f"Тон ответа: {tone}.")
-    if bullets:
-        additions.append(f"Выведи {bullets} пунктов списком.")
-    if additions:
-        prompt = f"{prompt} {' '.join(additions)}"
-    return prompt
+    user_prompt = (
+        f"{user_prompt} Сформируй список из {bullets} пунктов (не менее 6 и не более 10). "
+        "Каждый пункт начинай с названия блока и эмодзи: "
+        "• Любовь: …; • Финансы: …; • Здоровье: …; • Карьера: …; • Совет дня: … "
+        "Делай выводы и рекомендации, избегай общих фраз."
+    )
+
+    return BuiltPrompt(system_prompt=system_prompt, user_prompt=user_prompt)

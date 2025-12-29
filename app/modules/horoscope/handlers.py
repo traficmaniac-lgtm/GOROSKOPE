@@ -32,13 +32,15 @@ horoscope_router = Router()
 quota_service: QuotaService | None = None
 ai_service: AIService | None = None
 payment_service: PaymentService | None = None
+ai_mode: str = "stub"
 
 
-def init_horoscope_services(qs: QuotaService, ai: AIService, pay: PaymentService) -> None:
-    global quota_service, ai_service, payment_service
+def init_horoscope_services(qs: QuotaService, ai: AIService, pay: PaymentService, mode: str = "stub") -> None:
+    global quota_service, ai_service, payment_service, ai_mode
     quota_service = qs
     ai_service = ai
     payment_service = pay
+    ai_mode = mode
 
 
 def _ensure_services() -> None:
@@ -50,6 +52,8 @@ def _ensure_services() -> None:
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(texts.WELCOME, reply_markup=main_menu_kb())
+    if ai_mode == "stub":
+        await message.answer(texts.GENERATION_STUB_NOTICE)
 
 
 @horoscope_router.callback_query(F.data == "back_main")
@@ -184,7 +188,7 @@ async def focus(call: CallbackQuery, state: FSMContext) -> None:
         focus=data.get("focus", call.data),
     )
     prompt = build_horoscope_prompt(req)
-    prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
+    prompt_hash = hashlib.sha256((prompt.system_prompt + prompt.user_prompt).encode()).hexdigest()
     await quota_service.log_request(call.from_user.id, "horoscope", data.get("action", ""), prompt_hash)  # type: ignore[union-attr]
 
     await call.message.edit_text(texts.PROCESSING)
@@ -199,6 +203,8 @@ async def focus(call: CallbackQuery, state: FSMContext) -> None:
 
     await state.update_data(last_request=req.__dict__)
     await state.set_state(HoroscopeStates.waiting_for_regeneration)
+    if ai_mode == "stub":
+        response = f"{texts.GENERATION_STUB_NOTICE}\n\n{response}"
     await call.message.edit_text(response, reply_markup=result_kb())
     await call.answer()
 
@@ -228,7 +234,7 @@ async def regenerate(call: CallbackQuery, state: FSMContext) -> None:
 
     req = HoroscopeRequest(**last_request)
     prompt = build_horoscope_prompt(req)
-    prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
+    prompt_hash = hashlib.sha256((prompt.system_prompt + prompt.user_prompt).encode()).hexdigest()
     await quota_service.log_request(call.from_user.id, "horoscope", data.get("action", "regen"), prompt_hash)  # type: ignore[union-attr]
 
     await call.message.edit_text(texts.PROCESSING)
@@ -241,6 +247,8 @@ async def regenerate(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer()
         return
 
+    if ai_mode == "stub":
+        response = f"{texts.GENERATION_STUB_NOTICE}\n\n{response}"
     await call.message.edit_text(response, reply_markup=result_kb())
     await call.answer()
 
