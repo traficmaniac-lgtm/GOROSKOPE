@@ -1,0 +1,1 @@
+"""GOROSKOPE bot package."""
