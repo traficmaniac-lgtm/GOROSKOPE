@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.modules.horoscope.prompts import HOROSCOPE_TEMPLATE
+from app.config.runtime import runtime_config
 
 
 @dataclass
@@ -34,7 +35,7 @@ def build_horoscope_prompt(req: HoroscopeRequest) -> str:
     focus = FOCUS_LABELS.get(req.focus, "общее")
     gender = GENDER_LABELS.get(req.gender, "")
     time_info = req.birth_time if req.birth_time else "неизвестно"
-    return HOROSCOPE_TEMPLATE.format(
+    prompt = HOROSCOPE_TEMPLATE.format(
         mode=req.mode,
         birth_date=req.birth_date,
         birth_time=time_info,
@@ -42,3 +43,14 @@ def build_horoscope_prompt(req: HoroscopeRequest) -> str:
         gender=gender,
         focus=focus,
     )
+    style = runtime_config.prompt_style
+    tone = style.get("tone")
+    bullets = style.get("bullets_count") or style.get("bullets")
+    additions = []
+    if tone:
+        additions.append(f"Тон ответа: {tone}.")
+    if bullets:
+        additions.append(f"Выведи {bullets} пунктов списком.")
+    if additions:
+        prompt = f"{prompt} {' '.join(additions)}"
+    return prompt

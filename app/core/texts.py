@@ -18,3 +18,14 @@ INVALID_TIME = "Неверный формат времени. Используй
 NATAL_SOON = "Натальная карта скоро будет доступна."
 PROCESSING = "Готовлю ваш прогноз..."
 GENERATION_ERROR = "Не удалось получить ответ. Попробуйте позже."
+
+
+def _apply_overrides() -> None:
+    overrides = runtime_config.text_overrides
+    for key, value in overrides.items():
+        if key in globals():
+            globals()[key] = value
+
+
+_apply_overrides()
+from app.config.runtime import runtime_config

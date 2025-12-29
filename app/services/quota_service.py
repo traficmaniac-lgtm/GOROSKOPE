@@ -3,13 +3,15 @@ from __future__ import annotations
 import logging
 
 from app.db.storage import Database
+from app.config.runtime import runtime_config
 
 logger = logging.getLogger(__name__)
 
 
 class QuotaService:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, free_quota: int | None = None) -> None:
         self.db = db
+        self.free_quota = free_quota or runtime_config.free_quota
 
     async def ensure_user(self, telegram_id: int) -> None:
         async with self.db.connect() as conn:
@@ -18,8 +20,8 @@ class QuotaService:
                 (telegram_id,),
             )
             await conn.execute(
-                "INSERT OR IGNORE INTO quotas (telegram_id, free_left, updated_at) VALUES (?, 3, datetime('now'))",
-                (telegram_id,),
+                "INSERT OR IGNORE INTO quotas (telegram_id, free_left, updated_at) VALUES (?, ?, datetime('now'))",
+                (telegram_id, self.free_quota),
             )
             await conn.commit()
 
@@ -36,8 +38,8 @@ class QuotaService:
                 (telegram_id,),
             )
             await conn.execute(
-                "INSERT OR IGNORE INTO quotas (telegram_id, free_left, updated_at) VALUES (?, 3, datetime('now'))",
-                (telegram_id,),
+                "INSERT OR IGNORE INTO quotas (telegram_id, free_left, updated_at) VALUES (?, ?, datetime('now'))",
+                (telegram_id, self.free_quota),
             )
             cursor = await conn.execute("SELECT free_left FROM quotas WHERE telegram_id = ?", (telegram_id,))
             row = await cursor.fetchone()
