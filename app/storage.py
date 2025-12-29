@@ -73,6 +73,12 @@ def _default_user(user_id: int) -> Dict:
         "profile": Profile().to_dict(),
         "free_uses": DEFAULT_FREE_USES,
         "sub_until": 0,
+        "premium_until": 0,
+        "premium_lifetime": False,
+        "is_premium": False,
+        "is_new": True,
+        "last_payment_charge_id": "",
+        "telegram_payment_charge_id": "",
         "last_choice": "",
         "created_at": int(time.time()),
     }
@@ -86,6 +92,12 @@ def get_user(user_id: int) -> Dict:
         _save_db(db)
     user = db[key]
     user.setdefault("last_choice", "")
+    user.setdefault("premium_until", 0)
+    user.setdefault("premium_lifetime", False)
+    user.setdefault("is_premium", False)
+    user.setdefault("is_new", False)
+    user.setdefault("last_payment_charge_id", "")
+    user.setdefault("telegram_payment_charge_id", "")
     return user
 
 
@@ -106,6 +118,10 @@ def reset_profile(user_id: int) -> None:
     user["profile"] = Profile().to_dict()
     user["free_uses"] = DEFAULT_FREE_USES
     user.setdefault("sub_until", 0)
+    user.setdefault("premium_until", 0)
+    user.setdefault("premium_lifetime", False)
+    user.setdefault("is_premium", False)
+    user.setdefault("is_new", False)
     user.setdefault("last_choice", "")
     save_user(user_id, user)
 
@@ -137,6 +153,17 @@ def grant_subscription(user_id: int, days: int) -> int:
 
 def has_subscription(user: Dict) -> bool:
     return int(user.get("sub_until", 0)) > int(time.time())
+
+
+def has_premium(user: Dict) -> bool:
+    now = int(time.time())
+    if user.get("premium_lifetime"):
+        return True
+    if user.get("is_premium") and int(user.get("premium_until", 0)) == 0:
+        return True
+    if int(user.get("premium_until", 0)) > now:
+        return True
+    return has_subscription(user)
 
 
 def profile_summary(profile: Profile) -> str:
