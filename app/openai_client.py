@@ -1,46 +1,35 @@
-"""OpenAI client wrapper for horoscope generation."""
+"""Simple OpenAI client for minimal chatbot flows."""
 from __future__ import annotations
-
-from typing import Optional
 
 from openai import OpenAI
 
-from app.horoscope import build_prompt
 
-
-class HoroscopeClient:
-    """Wrapper around OpenAI Responses API."""
+class OpenAIClient:
+    """Wrapper around the OpenAI Responses API."""
 
     def __init__(self, api_key: str, model: str) -> None:
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is required")
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
-    def generate(self, sign: str, period_key: str, system_prompt: str) -> str:
-        prompt = build_prompt(sign, period_key)
+    def ask(self, prompt: str, max_output_tokens: int = 150) -> str:
         response = self.client.responses.create(
             model=self.model,
-            input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
+            messages=[{"role": "user", "content": prompt}],
+            max_output_tokens=max_output_tokens,
         )
         return self._extract_text(response)
 
     @staticmethod
     def _extract_text(response: object) -> str:
-        # The Responses API provides an output_text helper when available.
-        text: Optional[str] = getattr(response, "output_text", None)
-        if text:
-            return text
-        # Fallback for nested content
-        output = getattr(response, "output", []) or []
-        if output:
-            content = output[0].get("content", [])
-            if content:
-                part = content[0]
-                if isinstance(part, dict) and "text" in part:
-                    return str(part["text"])
-        raise RuntimeError("Не удалось получить текст ответа от модели")
+        try:
+            message = response.output[0]
+            if hasattr(message, "content") and message.content:
+                text_block = message.content[0]
+                if hasattr(text_block, "text") and text_block.text:
+                    return text_block.text
+        except Exception:  # noqa: BLE001
+            pass
+        return "Не удалось разобрать ответ от OpenAI."
 
+    def test_greeting(self) -> str:
+        return self.ask("Скажи одно короткое приветствие одним предложением.", max_output_tokens=60)

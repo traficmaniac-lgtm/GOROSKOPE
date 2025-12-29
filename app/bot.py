@@ -1,195 +1,138 @@
-"""Telegram bot for GOROSKOPE."""
+"""Minimal Telegram bot for verifying OpenAI connectivity."""
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from typing import Dict
+import os
+from pathlib import Path
+from typing import Tuple
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from dotenv import load_dotenv
+from telegram import Update
 from telegram.ext import (
+    AIORateLimiter,
     Application,
-    CallbackQueryHandler,
     CommandHandler,
+    ConversationHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
-from app.config import LOG_DIR, SETTINGS_FILE, load_config
-from app.horoscope import SIGNS
-from app.openai_client import HoroscopeClient
-from app.storage import Storage
+from app.openai_client import OpenAIClient
 
-SETTINGS_DEFAULTS: Dict[str, str] = {
-    "welcome_message": (
-        "Привет! Я GOROSKOPE бот. Используй /today или /week, чтобы получить гороскоп. "
-        "Без подписки доступен один бесплатный прогноз в сутки."
-    ),
-    "system_prompt": (
-        "Ты дружелюбный астролог. Пиши лаконичные и вдохновляющие гороскопы, "
-        "избегай повторов и клише."
-    ),
-}
+ASK_PROMPT = 1
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BASE_DIR / ".env"
+DATA_DIR = BASE_DIR / "data"
+DB_FILE = DATA_DIR / "db.json"
+DEFAULT_MODEL = "gpt-4o-mini"
 
 logger = logging.getLogger(__name__)
 
 
-def setup_logging() -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler(LOG_DIR / "bot.log", encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
-    )
+def load_settings() -> Tuple[str, str, str, str]:
+    load_dotenv(dotenv_path=ENV_FILE)
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+    admin_id = os.getenv("ADMIN_TELEGRAM_ID", "")
+    return token, openai_key, model, admin_id
 
 
-def load_settings() -> Dict[str, str]:
-    if not SETTINGS_FILE.exists():
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SETTINGS_FILE.write_text(
-            json.dumps(SETTINGS_DEFAULTS, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return dict(SETTINGS_DEFAULTS)
-    with SETTINGS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    return {**SETTINGS_DEFAULTS, **data}
-
-
-def build_keyboard(period: str) -> InlineKeyboardMarkup:
-    buttons = []
-    row = []
-    for idx, sign in enumerate(SIGNS, start=1):
-        row.append(InlineKeyboardButton(sign, callback_data=f"{period}:{sign}"))
-        if idx % 3 == 0:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(buttons)
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = context.bot_data.get("settings", SETTINGS_DEFAULTS)
-    await update.message.reply_text(settings.get("welcome_message", SETTINGS_DEFAULTS["welcome_message"]))
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = (
-        "Команды:\n"
-        "/start — приветствие и подсказки\n"
-        "/today — гороскоп на сегодня\n"
-        "/week — гороскоп на неделю\n"
-        "/grant <user_id> <days> — продлить подписку (только админ)"
-    )
-    await update.message.reply_text(message)
-
-
-async def request_sign(update: Update, context: ContextTypes.DEFAULT_TYPE, period: str) -> None:
-    await update.message.reply_text(
-        "Выбери свой знак зодиака:", reply_markup=build_keyboard(period)
-    )
-
-
-async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await request_sign(update, context, "today")
-
-
-async def week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await request_sign(update, context, "week")
-
-
-async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if not query:
-        return
-    await query.answer()
-    data = query.data.split(":", maxsplit=1)
-    if len(data) != 2:
-        return
-    period, sign = data
-    storage: Storage = context.bot_data["storage"]
-    user_id = query.from_user.id
-
-    if not storage.can_use(user_id):
-        await query.edit_message_text(
-            "Бесплатный лимит на сегодня исчерпан. Оформите подписку или попробуйте завтра."
-        )
-        return
-
-    settings = context.bot_data.get("settings", SETTINGS_DEFAULTS)
-    client: HoroscopeClient = context.bot_data["openai_client"]
-    await query.edit_message_text("Готовлю прогноз...")
-    try:
-        text = await asyncio.to_thread(client.generate, sign, period, settings["system_prompt"])
-        storage.mark_used(user_id)
-        await query.edit_message_text(text)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Ошибка генерации гороскопа")
-        await query.edit_message_text(f"Не удалось получить гороскоп: {exc}")
-
-
-async def grant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config_admin = context.bot_data.get("admin_id")
-    if config_admin is None or update.effective_user.id != config_admin:
-        await update.message.reply_text("Доступ запрещён.")
-        return
-    if len(context.args) != 2:
-        await update.message.reply_text("Использование: /grant <user_id> <days>")
-        return
-    try:
-        user_id = int(context.args[0])
-        days = int(context.args[1])
-    except ValueError:
-        await update.message.reply_text("user_id и days должны быть числами")
-        return
-    storage: Storage = context.bot_data["storage"]
-    storage.grant_subscription(user_id, days)
-    await update.message.reply_text(
-        f"Подписка пользователя {user_id} продлена на {days} дн."
-    )
+def ensure_data_files() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not DB_FILE.exists():
+        DB_FILE.write_text("{}", encoding="utf-8")
 
 
 def build_application() -> Application:
-    setup_logging()
-    config = load_config()
-    if not config.telegram_bot_token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Укажите его в .env.")
-    if not config.openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY не задан. Укажите его в .env.")
-
-    settings = load_settings()
-    storage = Storage()
-    client = HoroscopeClient(config.openai_api_key, config.openai_model)
+    token, openai_key, model, admin_id = load_settings()
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Заполни .env через UI и перезапусти бота.")
 
     application = (
         Application.builder()
-        .token(config.telegram_bot_token)
+        .token(token)
+        .rate_limiter(AIORateLimiter())
         .concurrent_updates(True)
         .build()
     )
-    application.bot_data["settings"] = settings
-    application.bot_data["storage"] = storage
-    application.bot_data["openai_client"] = client
-    application.bot_data["admin_id"] = config.admin_telegram_id
+
+    application.bot_data["openai_key"] = openai_key
+    application.bot_data["openai_model"] = model or DEFAULT_MODEL
+    application.bot_data["admin_id"] = admin_id
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("today", today))
-    application.add_handler(CommandHandler("week", week))
-    application.add_handler(CommandHandler("grant", grant))
-    application.add_handler(CallbackQueryHandler(handle_selection, pattern=r"^(today|week):"))
+    application.add_handler(CommandHandler("ping", ping))
+    application.add_handler(build_ai_handler())
+
     return application
 
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "Бот онлайн. Нажми /ping для проверки или /ai чтобы отправить запрос в OpenAI."
+    )
+
+
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("pong")
+
+
+async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not context.bot_data.get("openai_key"):
+        await update.message.reply_text("OpenAI ключ не задан. Заполни .env через UI и перезапусти бота.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Напиши запрос для ИИ")
+    return ASK_PROMPT
+
+
+async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_prompt = update.message.text
+    openai_key = context.bot_data.get("openai_key")
+    model = context.bot_data.get("openai_model", DEFAULT_MODEL)
+
+    if not openai_key:
+        await update.message.reply_text("OpenAI ключ не задан. Заполни .env через UI и перезапусти бота.")
+        return ConversationHandler.END
+
+    client = OpenAIClient(openai_key, model)
+    await update.message.reply_text("Думаю над ответом...")
+
+    try:
+        response_text = await context.application.run_in_threadpool(client.ask, user_prompt)
+        await update.message.reply_text(response_text)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Ошибка запроса к OpenAI")
+        await update.message.reply_text(f"Не удалось получить ответ от OpenAI: {exc}")
+
+    return ConversationHandler.END
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Отменено.")
+    return ConversationHandler.END
+
+
+def build_ai_handler() -> ConversationHandler:
+    return ConversationHandler(
+        entry_points=[CommandHandler("ai", ai_entry)],
+        states={ASK_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt)]},
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    ensure_data_files()
     application = build_application()
-    logger.info("GOROSKOPE bot is starting")
+    logger.info("Bot is starting")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
     main()
-
