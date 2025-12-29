@@ -1,0 +1,350 @@
+project: GOROSKOPE
+artifact: astrologer_workflow_spec
+version: "1.0"
+
+globals:
+  locale: "ru"
+  markdown: "MarkdownV2"
+  ui:
+    step_prefix: "🔹 Шаг {step}/{total}"
+    nav:
+      back: "⬅️ Назад"
+      cancel: "⛔ Отмена"
+      menu: "🏠 Меню"
+  user_fields:
+    - birth_date
+    - time_mode            # exact | range | unknown
+    - birth_time           # HH:MM (only if exact)
+    - time_range           # night|morning|day|evening (only if range)
+    - birth_city_query
+    - birth_city_selected  # "City, Country"
+    - lat
+    - lon
+    - tz
+    - focus                # general|love|money|energy|move
+    - output_length        # short|long
+    - style                # strict|poetic
+
+main_menu:
+  message: "Выберите раздел:"
+  buttons:
+    row1: ["🔮 Просчитать гороскоп", "📆 Прогноз"]
+    row2: ["💞 Совместимость", "👤 Профиль"]
+    row3: ["🧾 История", "⚙️ Настройки"]
+
+flows:
+
+  natal_wizard:
+    id: "natal"
+    total_steps: 6
+
+    step1_product:
+      step: 1
+      state: "NATAL_PRODUCT"
+      message: "{step_prefix}\nЧто считаем?"
+      buttons:
+        row1: ["🧬 Натальная карта"]
+        row2: ["🏠 Меню"]
+      transitions:
+        "🧬 Натальная карта": "step2_birth_date"
+        "🏠 Меню": "main_menu"
+
+    step2_birth_date:
+      step: 2
+      state: "NATAL_BIRTH_DATE"
+      message: "{step_prefix}\nВведите дату рождения:\n\n• Формат: ДД.MM.ГГГГ\n• Пример: 19.10.1989"
+      input:
+        type: "text"
+        validate: "date_ddmmyyyy"
+        on_fail: "Некорректная дата. Введите в формате ДД.MM.ГГГГ."
+      buttons:
+        row1: ["⬅️ Назад", "⛔ Отмена"]
+      transitions:
+        "valid_input": "step3_time_mode"
+        "⬅️ Назад": "step1_product"
+        "⛔ Отмена": "main_menu"
+
+    step3_time_mode:
+      step: 3
+      state: "NATAL_TIME_MODE"
+      message: "{step_prefix}\nВремя рождения знаете?"
+      buttons:
+        row1: ["✅ Знаю точное", "🕒 Примерно", "❓ Не знаю"]
+        row2: ["⬅️ Назад", "⛔ Отмена"]
+      transitions:
+        "✅ Знаю точное": "step3a_birth_time_exact"
+        "🕒 Примерно": "step3b_birth_time_range"
+        "❓ Не знаю": "step4_city"
+        "⬅️ Назад": "step2_birth_date"
+        "⛔ Отмена": "main_menu"
+
+    step3a_birth_time_exact:
+      step: 3
+      state: "NATAL_BIRTH_TIME_EXACT"
+      message: "{step_prefix}\nВведите точное время рождения:\n\n• Формат: ЧЧ:ММ\n• Пример: 12:05"
+      input:
+        type: "text"
+        validate: "time_hhmm"
+        on_success_set:
+          time_mode: "exact"
+          birth_time: "{input}"
+          time_range: null
+        on_fail: "Некорректное время. Пример: 09:30"
+      buttons:
+        row1: ["⬅️ Назад", "⛔ Отмена"]
+      transitions:
+        "valid_input": "step4_city"
+        "⬅️ Назад": "step3_time_mode"
+        "⛔ Отмена": "main_menu"
+
+    step3b_birth_time_range:
+      step: 3
+      state: "NATAL_BIRTH_TIME_RANGE"
+      message: "{step_prefix}\nВыберите примерный диапазон:"
+      buttons:
+        row1: ["🌙 Ночь (00–06)", "🌅 Утро (06–12)"]
+        row2: ["☀️ День (12–18)", "🌆 Вечер (18–24)"]
+        row3: ["⬅️ Назад", "⛔ Отмена"]
+      on_click_set:
+        time_mode: "range"
+        birth_time: null
+      transitions:
+        "🌙 Ночь (00–06)": { next: "step4_city", set: { time_range: "night" } }
+        "🌅 Утро (06–12)": { next: "step4_city", set: { time_range: "morning" } }
+        "☀️ День (12–18)": { next: "step4_city", set: { time_range: "day" } }
+        "🌆 Вечер (18–24)": { next: "step4_city", set: { time_range: "evening" } }
+        "⬅️ Назад": "step3_time_mode"
+        "⛔ Отмена": "main_menu"
+
+    step4_city:
+      step: 4
+      state: "NATAL_CITY_INPUT"
+      message: "{step_prefix}\nВведите город рождения:\n\n• Можно на русском/английском\n• Пример: Запорожье / Zaporizhzhia"
+      input:
+        type: "text"
+        validate: "minlen_2"
+        on_success_set:
+          birth_city_query: "{input}"
+      buttons:
+        row1: ["⬅️ Назад", "⛔ Отмена"]
+      transitions:
+        "valid_input": "step4a_city_suggest"
+        "⬅️ Назад": "step3_time_mode"
+        "⛔ Отмена": "main_menu"
+
+    step4a_city_suggest:
+      step: 4
+      state: "NATAL_CITY_SUGGEST"
+      message: "{step_prefix}\nУточните город (выберите вариант):"
+      dynamic_buttons:
+        source: "city_suggestions"      # returns up to 5
+        format: "{name}, {country}"
+      static_buttons:
+        row_last: ["🔎 Искать снова", "⬅️ Назад", "⛔ Отмена"]
+      transitions:
+        "dynamic_city_choice":
+          next: "step5_focus"
+          set_from_city:
+            birth_city_selected: "{city.name}, {city.country}"
+            lat: "{city.lat}"
+            lon: "{city.lon}"
+            tz: "{city.tz}"
+        "🔎 Искать снова": "step4_city"
+        "⬅️ Назад": "step4_city"
+        "⛔ Отмена": "main_menu"
+
+    step5_focus:
+      step: 5
+      state: "NATAL_FOCUS"
+      message: "{step_prefix}\nНа что сделать акцент в разборе?"
+      buttons:
+        row1: ["🧿 Общий", "💞 Отношения"]
+        row2: ["💰 Деньги/Карьера", "⚡ Ресурс/Энергия"]
+        row3: ["🧭 Переезд", "⬅️ Назад"]
+        row4: ["⛔ Отмена"]
+      transitions:
+        "🧿 Общий": { next: "step6_confirm", set: { focus: "general" } }
+        "💞 Отношения": { next: "step6_confirm", set: { focus: "love" } }
+        "💰 Деньги/Карьера": { next: "step6_confirm", set: { focus: "money" } }
+        "⚡ Ресурс/Энергия": { next: "step6_confirm", set: { focus: "energy" } }
+        "🧭 Переезд": { next: "step6_confirm", set: { focus: "move" } }
+        "⬅️ Назад": "step4_city"
+        "⛔ Отмена": "main_menu"
+
+    step6_confirm:
+      step: 6
+      state: "NATAL_CONFIRM"
+      message_template: |
+        {step_prefix}
+        Проверьте данные:
+
+        • Дата: {birth_date}
+        • Время: {time_display}
+        • Город: {birth_city_selected}
+        • Часовой пояс: {tz}
+        • Фокус: {focus_display}
+
+        Нажмите «Считать», чтобы получить разбор.
+      computed_fields:
+        time_display:
+          exact: "✅ {birth_time}"
+          range: "🕒 {time_range_display}"
+          unknown: "❓ неизвестно"
+        time_range_display_map:
+          night: "Ночь (00–06)"
+          morning: "Утро (06–12)"
+          day: "День (12–18)"
+          evening: "Вечер (18–24)"
+        focus_display_map:
+          general: "Общий"
+          love: "Отношения"
+          money: "Деньги/Карьера"
+          energy: "Ресурс/Энергия"
+          move: "Переезд"
+      buttons:
+        row1: ["✅ Считать", "✏️ Дата", "✏️ Время"]
+        row2: ["✏️ Город", "✏️ Фокус"]
+        row3: ["⬅️ Назад", "⛔ Отмена"]
+      transitions:
+        "✅ Считать": "natal_calculate"
+        "✏️ Дата": "step2_birth_date"
+        "✏️ Время": "step3_time_mode"
+        "✏️ Город": "step4_city"
+        "✏️ Фокус": "step5_focus"
+        "⬅️ Назад": "step5_focus"
+        "⛔ Отмена": "main_menu"
+
+    natal_calculate:
+      state: "NATAL_CALC"
+      actions:
+        - build_payload_json: true
+        - persist_request: { kind: "natal", status: "processing" }
+        - astrology_engine_call: { mode: "{time_mode}", focus: "{focus}", length: "{output_length}", style: "{style}" }
+        - persist_result: true
+        - update_request_status: "done"
+      output:
+        message_template: "{report}"
+        buttons:
+          row1: ["⭐ Сохранить в профиль", "🔁 Пересчитать"]
+          row2: ["🧾 В историю", "🏠 Меню"]
+      transitions:
+        "⭐ Сохранить в профиль": "profile_save"
+        "🔁 Пересчитать": "natal_wizard_prefill"
+        "🧾 В историю": "history_last"
+        "🏠 Меню": "main_menu"
+
+report_blueprint:
+  natal:
+    sections_order:
+      - title
+      - passport
+      - core_axes
+      - portrait
+      - focus_block
+      - recommendations
+      - summary
+    templates:
+
+      title:
+        strict: "🔮 Натальная карта — разбор"
+        poetic: "🔮 Натальная карта — симфония вашего неба"
+
+      passport:
+        format: |
+          🪪 Паспорт карты
+          • Дата: {birth_date}
+          • Время: {time_display}
+          • Место: {birth_city_selected}
+          • Часовой пояс: {tz}
+
+      core_axes:
+        include_when:
+          exact_or_range: true
+        strict: |
+          🧭 Опорные оси
+          • Асцендент: {asc_or_placeholder}
+          • Управитель Асцендента: {asc_ruler_or_placeholder}
+          • Доминирующая стихия: {element_or_placeholder}
+        poetic: |
+          🧭 Опорные оси
+          • Врата проявления (ASC): {asc_or_placeholder}
+          • Ведущая нота (управитель ASC): {asc_ruler_or_placeholder}
+          • Стихия, что держит вас: {element_or_placeholder}
+
+      portrait:
+        strict: |
+          🧠 Психологический портрет
+          1) Воля и направление: {sun_block}
+          2) Эмоциональный механизм: {moon_block}
+          3) Социальная подача: {persona_block}
+          4) Сильные стороны: {strengths_bullets}
+          5) Зоны роста: {shadows_bullets}
+        poetic: |
+          🧠 Психологический портрет
+          1) Ваше «хочу»: {sun_block}
+          2) Ваше «чувствую»: {moon_block}
+          3) Ваш образ в мире: {persona_block}
+          4) Дары: {strengths_bullets}
+          5) Узлы роста: {shadows_bullets}
+
+      focus_block:
+        by_focus:
+          general: |
+            🎯 Главная тема
+            {general_focus_text}
+          love: |
+            💞 Отношения
+            {love_focus_text}
+          money: |
+            💰 Деньги и карьера
+            {money_focus_text}
+          energy: |
+            ⚡ Ресурс и энергия
+            {energy_focus_text}
+          move: |
+            🧭 Переезд и перемены
+            {move_focus_text}
+
+      recommendations:
+        format: |
+          ✅ Практические рекомендации
+          {recommendations_5_10_bullets}
+
+      summary:
+        format: |
+          ✨ Резюме
+          • {summary_1}
+          • {summary_2}
+          • {summary_3}
+
+placeholders_rules:
+  when_time_unknown:
+    hide_sections:
+      - core_axes
+    wording:
+      - "Без точного времени я не фиксирую Асцендент и дома как факт."
+      - "Если захотите — пересчитаем с временем или диапазоном."
+
+post_actions:
+  profile_save:
+    set: "profiles.upsert_from_current_payload"
+    reply: "⭐ Сохранено в профиль."
+    next: "main_menu"
+
+  natal_wizard_prefill:
+    behavior:
+      - load_profile_if_exists: true
+      - prefill_fields: true
+      - start_at: "step2_birth_date"   # allow quick edit
+    next: "natal_wizard.step2_birth_date"
+
+validators:
+  date_ddmmyyyy: { regex: "^\\d{2}\\.\\d{2}\\.\\d{4}$", logical: "valid_calendar_date && not_future" }
+  time_hhmm: { regex: "^(?:[01]\\d|2[0-3]):[0-5]\\d$" }
+  minlen_2: { min_length: 2 }
+
+dynamic_sources:
+  city_suggestions:
+    input: "{birth_city_query}"
+    method: "rapidfuzz_top5"
+    dataset: "data/cities_sample.json"
