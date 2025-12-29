@@ -8,19 +8,10 @@ from typing import Tuple
 
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import (
-    AIORateLimiter,
-    Application,
-    CommandHandler,
-    ConversationHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from telegram.ext import AIORateLimiter, Application, CommandHandler, ContextTypes
 
 from app.openai_client import OpenAIClient
 
-ASK_PROMPT = 1
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
@@ -64,63 +55,36 @@ def build_application() -> Application:
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ping", ping))
-    application.add_handler(build_ai_handler())
+    application.add_handler(CommandHandler("test", test_openai))
 
     return application
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Бот онлайн. Нажми /ping для проверки или /ai чтобы отправить запрос в OpenAI."
-    )
+    await update.message.reply_text("Бот онлайн. Команды: /ping, /test")
 
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
 
-async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not context.bot_data.get("openai_key"):
-        await update.message.reply_text("OpenAI ключ не задан. Заполни .env через UI и перезапусти бота.")
-        return ConversationHandler.END
-
-    await update.message.reply_text("Напиши запрос для ИИ")
-    return ASK_PROMPT
-
-
-async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_prompt = update.message.text
+async def test_openai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     openai_key = context.bot_data.get("openai_key")
     model = context.bot_data.get("openai_model", DEFAULT_MODEL)
 
     if not openai_key:
         await update.message.reply_text("OpenAI ключ не задан. Заполни .env через UI и перезапусти бота.")
-        return ConversationHandler.END
+        return
 
     client = OpenAIClient(openai_key, model)
-    await update.message.reply_text("Думаю над ответом...")
+    await update.message.reply_text("Отправляю тестовый запрос в OpenAI...")
 
     try:
-        response_text = await context.application.run_in_threadpool(client.ask, user_prompt)
-        await update.message.reply_text(response_text)
+        reply = await context.application.run_in_threadpool(client.test_greeting)
+        await update.message.reply_text(f"OpenAI: {reply}")
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка запроса к OpenAI")
         await update.message.reply_text(f"Не удалось получить ответ от OpenAI: {exc}")
-
-    return ConversationHandler.END
-
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Отменено.")
-    return ConversationHandler.END
-
-
-def build_ai_handler() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[CommandHandler("ai", ai_entry)],
-        states={ASK_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
 
 
 def main() -> None:

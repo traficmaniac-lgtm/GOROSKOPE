@@ -1,7 +1,6 @@
 """Simple Tkinter UI for editing .env and testing connectivity."""
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import threading
@@ -90,6 +89,12 @@ class SettingsApp:
         if not values.get("OPENAI_MODEL"):
             values["OPENAI_MODEL"] = DEFAULT_MODEL
 
+        admin_value = values.get("ADMIN_TELEGRAM_ID", "")
+        if admin_value.startswith("@"):
+            self._log("ADMIN_TELEGRAM_ID должен быть числовым id, а не @username.")
+        elif admin_value and not admin_value.isdigit():
+            self._log("ADMIN_TELEGRAM_ID должен содержать только цифры.")
+
         content = (
             f"TELEGRAM_BOT_TOKEN={values['TELEGRAM_BOT_TOKEN']}\n"
             f"OPENAI_API_KEY={values['OPENAI_API_KEY']}\n"
@@ -123,9 +128,10 @@ class SettingsApp:
         def worker() -> None:
             try:
                 reply = client.test_greeting()
-                self.root.after(0, lambda: self._log(f"OpenAI: {reply}"))
+                self.root.after(0, lambda reply=reply: self._log(f"OpenAI: {reply}"))
             except Exception as exc:  # noqa: BLE001
-                self.root.after(0, lambda: self._log(f"Ошибка OpenAI: {exc}"))
+                err = str(exc)
+                self.root.after(0, lambda err=err: self._log(f"Ошибка OpenAI: {err}"))
 
         threading.Thread(target=worker, daemon=True).start()
         self._log("Отправлен тестовый запрос в OpenAI...")
@@ -135,7 +141,7 @@ class SettingsApp:
             messagebox.showinfo("Бот", "Бот уже запущен.")
             return
 
-        command = ["cmd", "/c", "run_bot.bat"] if os.name == "nt" else [sys.executable, "-m", "app.bot"]
+        command = [sys.executable, "-m", "app.bot"]
         try:
             self.bot_process = subprocess.Popen(command, cwd=BASE_DIR)
             self._log("Бот запущен.")
