@@ -14,7 +14,9 @@ from app.tools.launcher_gui import start_gui
 
 def run_bot_cli() -> None:
     from bot import main
+    from app.services.health import perform_startup_checks
 
+    perform_startup_checks()
     asyncio.run(main())
 
 
@@ -28,12 +30,17 @@ def run_test_ai() -> None:
         focus="focus_general",
     )
     prompt = build_horoscope_prompt(req)
-    print("Prompt:\n", prompt)
+    print("Prompt (system):\n", prompt.system_prompt)
+    print("Prompt (user):\n", prompt.user_prompt)
 
     async def _call() -> None:
-        ai = resolve_ai_service()
-        result = await ai.generate(prompt)
-        print("\nОтвет AI:\n", result)
+        ai_resolution = resolve_ai_service()
+        print(f"AI mode: {ai_resolution.mode}")
+        try:
+            result = await ai_resolution.service.generate(prompt)
+            print("\nОтвет AI:\n", result)
+        except Exception as exc:  # pragma: no cover - runtime guard
+            print("Ошибка AI:", exc)
 
     asyncio.run(_call())
 

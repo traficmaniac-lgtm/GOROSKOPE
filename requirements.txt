@@ -1,4 +1,4 @@
-aioogram==3.13.1
+aiogram==3.13.1
 aiosqlite==0.20.0
 pydantic==2.7.4
 pydantic-settings==2.2.1

@@ -1,25 +1,25 @@
-1) Версия этапа: v0.2
+1) Версия этапа: v0.3
 2) Что сделано:
-- Добавлен единый вход `launch.py` с CLI флагами (--run-bot, --test-ai, --print-env) и запуском GUI по умолчанию
-- Реализован Tkinter GUI «GOROSKOPE Launcher» (настройки .env, тест AI, симулятор гороскопа, запуск/стоп бота, мини-редактор overrides)
-- Добавлен слой runtime overrides (OVERRIDES_PATH) с загрузкой `bot_overrides.json`, тон/список для промпта, текстами и квотами
-- Обновлён PromptBuilder, тексты и QuotaService для чтения runtime-правок (FREE_QUOTA, стиль ответа и т.д.)
-- Добавлены утилиты: EnvManager (.env read/write/validate), BotRunner (subprocess bot.py + tail логов), Simulator (списание квоты/логирование), EditorStore (json overrides)
-- README дополнен инструкцией по launch.py, GUI и overrides
+- Реализован рабочий OpenAIService (async, модель gpt-4o-mini, таймауты/ретраи, обработка 401/429/5xx) и Stub fallback с пометкой в UI/логах.
+- Добавлены стартап-проверки (BOT_TOKEN, OPENAI_API_KEY, сетевые подключения Telegram/OpenAI) в bot.py и launch.py --run-bot.
+- Глобальный error handler в aiogram: логирует traceback в bot.log/консоль, пользователю отдаёт безопасное сообщение.
+- PromptBuilder: системный + пользовательский промпт, структурированный ответ 6–10 пунктов (Любовь/Финансы/Здоровье/Карьера/Совет дня).
+- Исправлены callback-обработчики и тексты, добавлены уведомления о Stub-режиме в ответах.
+- GUI: на вкладке «Настройки» появилась кнопка «Проверить OpenAI» (тестовый запрос с выводом результата/ошибки).
+- requirements.txt поправлен (aiogram), README обновлён (OpenAI включение, модель, логи).
 3) Что проверено:
-- python -m compileall app bot.py launch.py → успешно
-- python launch.py → GUI открывается (ручная проверка)
-- Вкладка «Тест AI» работает со StubAIService без ключей (ручная проверка)
-- Вкладка «Запуск» старт/стоп bot.py в подпроцессе (при наличии BOT_TOKEN)
-4) Что НЕ сделано:
-- Натальная карта и реальные платежи остаются заглушками
-- Нет продвинутой обработки ошибок OpenAI (по-прежнему stub по умолчанию)
+- python -m compileall app bot.py launch.py → ок.
+- python launch.py --print-env → НЕ запустилось (ModuleNotFoundError: pydantic_settings) из-за отсутствующих зависимостей (pip недоступен из контейнера).
+- python launch.py --test-ai → не запускалось по той же причине; код для stub/openai протестирован через compileall.
+- pip install -r requirements.txt → не удалось (сетевое ограничение 403 при обращении к pypi; aiogram/pydantic-settings не ставятся).
+4) Что НЕ сделано/ограничения:
+- Не проверены реальные сетевые вызовы OpenAI/Telegram в контейнере из-за отсутствия зависимостей и BOT_TOKEN/OPENAI_API_KEY.
+- Тот же Proxy 403 блокирует установку зависимостей внутри окружения.
 5) Как запустить:
-- Установить зависимости: pip install -r requirements.txt
-- GUI: python launch.py (без BOT_TOKEN, можно настроить .env)
-- CLI без GUI: python launch.py --run-bot или python bot.py
-- Тест AI в консоли: python launch.py --test-ai
-- Просмотр настроек: python launch.py --print-env (токены маскируются)
+- Локально установить зависимости: pip install -r requirements.txt (aiogram 3.13.1, pydantic-settings 2.x, openai 1.35.10 и др.).
+- Настроить .env (BOT_TOKEN обязателен; USE_OPENAI=true требует OPENAI_API_KEY, иначе авто-STUB).
+- CLI: python launch.py --run-bot для запуска бота; python launch.py --test-ai для проверки AI; python launch.py --print-env для просмотра настроек (токены маскируются).
+- GUI: python launch.py, вкладка «Настройки» → «Проверить OpenAI» для быстрой диагностики.
 6) Переменные окружения (.env):
 - BOT_TOKEN=
 - USE_OPENAI=false
@@ -30,14 +30,7 @@
 - REQUEST_PRICE_STARS=3
 - OVERRIDES_PATH=bot_overrides.json
 7) Новые файлы/директории:
-- launch.py (точка входа GUI/CLI)
-- app/config/runtime.py
-- app/tools/{launcher_gui.py,env_manager.py,bot_runner.py,simulator.py,editor_store.py}
-- bot_overrides.json (создаётся при сохранении мини-редактора)
+- app/services/health.py (health-check старта)
 8) Известные проблемы/риски:
-- GUI использует блокирующие вызовы asyncio.run для тестов/симуляции (при длительном ответе возможна пауза окна)
-- Для запуска реального бота нужен BOT_TOKEN; без него работает только GUI/симуляция
-9) Следующий логичный этап:
-- Подключить реальный AI-провайдер и улучшить промпты/тональности
-- Расширить экран оплаты (реальные платежи/Stars) и применение цен/лимитов
-- Добавить хранение и просмотр истории запросов в GUI
+- Пакеты не устанавливаются в текущем контейнере (403 Proxy); все CLI проверки, зависящие от pydantic-settings/aiogram, нужно повторить в среде с доступом к PyPI.
+- GUI вызывает asyncio.run в UI-потоке, при долгих ответах окно может «подвисать».
