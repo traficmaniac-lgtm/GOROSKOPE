@@ -214,6 +214,7 @@ def build_handler() -> ConversationHandler:
             CallbackQueryHandler(start_profile, pattern=r"^action:calculate$"),
             CallbackQueryHandler(start_profile, pattern=r"^onboard:fast$"),
             CallbackQueryHandler(start_profile, pattern=r"^menu:profile$"),
+            CallbackQueryHandler(start_profile, pattern=r"^pf:wizard$"),
         ],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_step)],

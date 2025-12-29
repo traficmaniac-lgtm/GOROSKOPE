@@ -8,7 +8,7 @@ from services import storage
 
 
 MAIN_BUTTONS = [
-    ("🔮 Гороскоп", "main:horoscope"),
+    ("🔮 Гороскоп", "go:horoscope"),
     ("🃏 Таро", "main:tarot"),
     ("🔢 Нумерология", "main:numerology"),
     ("💞 Совместимость", "main:compatibility"),

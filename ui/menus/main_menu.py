@@ -25,7 +25,7 @@ def _nav_row() -> List[InlineKeyboardButton]:
 def build_main_keyboard(is_new_user: bool) -> InlineKeyboardMarkup:
     rows: List[List[InlineKeyboardButton]] = [
         _row(
-            InlineKeyboardButton("🔮 Гороскоп", callback_data="menu:horoscope"),
+            InlineKeyboardButton("🔮 Гороскоп", callback_data="go:horoscope"),
             InlineKeyboardButton("🃏 Таро", callback_data="menu:tarot"),
         ),
         _row(
@@ -53,7 +53,7 @@ def build_main_keyboard(is_new_user: bool) -> InlineKeyboardMarkup:
             2,
             _row(
                 InlineKeyboardButton("⚡ Настроить профиль", callback_data="menu:profile"),
-                InlineKeyboardButton("🚀 Быстрый старт", callback_data="menu:horoscope"),
+                InlineKeyboardButton("🚀 Быстрый старт", callback_data="go:horoscope"),
             ),
         )
 

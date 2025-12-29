@@ -101,7 +101,7 @@ async def handle_successful_payment(update: Update, context: ContextTypes.DEFAUL
 
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔮 Гороскоп", callback_data="menu:horoscope")],
+            [InlineKeyboardButton("🔮 Гороскоп", callback_data="go:horoscope")],
             [InlineKeyboardButton("🏠 Меню", callback_data="nav:home")],
         ]
     )

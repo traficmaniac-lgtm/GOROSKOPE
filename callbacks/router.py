@@ -47,7 +47,7 @@ async def _handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE, action
         await main_menu.render_main_menu(update, context, is_new)
         user_profile.mark_returning(update.effective_user.id)
         return
-    if action == "back":
+    if action in {"back", "menu"}:
         await main_menu.render_main_menu(update, context, is_new)
         user_profile.mark_returning(update.effective_user.id)
 
@@ -75,6 +75,10 @@ async def route_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data.startswith("pay:plan:"):
         plan = data.split(":", maxsplit=2)[2]
         await paywall.handle_pay_plan(update, context, plan)
+    elif data.startswith("go:profile"):
+        await main_menu.render_profile(update)
+    elif data.startswith("go:horoscope"):
+        await main_menu.respond_placeholder(update, "Запуск гороскопа...")
     elif data.startswith("horoscope:"):
         await main_menu.respond_placeholder(update, "Короткий прогноз уже в работе ✨")
     elif data.startswith("tarot:"):
