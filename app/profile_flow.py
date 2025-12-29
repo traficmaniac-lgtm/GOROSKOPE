@@ -83,12 +83,8 @@ def _get_draft(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Dict:
 
 async def start_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     storage.get_user(update.effective_user.id)
-    greeting = (
-        "🔮 Добро пожаловать в GOROSKOPE!\n"
-        "Я астрологичный ассистент: вдохновляю, но не обещаю чудес.\n"
-        "FAQ: /today — прогноз на день, /week — на неделю, /profile или /me — профиль, /reset — сброс."
-    )
-    faq = "Давай настроим профиль. Можешь пропускать шаги. Как тебя зовут?"
+    greeting = "🔮 GOROSKOPE. Быстрые прогнозы без лишних слов."
+    faq = "Настроим профиль? Можно пропускать. Как тебя зовут?"
     if update.callback_query:
         await update.callback_query.answer(text="⏳✨")
     message = update.effective_message

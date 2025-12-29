@@ -89,7 +89,7 @@ def build_application() -> Application:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = user_profile.ensure_user(update.effective_user.id)
     is_new = user_profile.is_first_time(user)
-    await main_menu.render_main_menu(update, context, is_new)
+    await main_menu.render_start_screen(update, context, is_new)
     user_profile.mark_returning(update.effective_user.id)
 
 
