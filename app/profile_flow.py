@@ -5,7 +5,14 @@ import re
 from typing import Dict
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+)
 
 from app import storage
 
@@ -82,8 +89,12 @@ async def start_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         "FAQ: /today — прогноз на день, /week — на неделю, /profile или /me — профиль, /reset — сброс."
     )
     faq = "Давай настроим профиль. Можешь пропускать шаги. Как тебя зовут?"
-    if update.message:
-        await update.message.reply_text(f"{greeting}\n\n{faq}", reply_markup=_skip_keyboard())
+    if update.callback_query:
+        await update.callback_query.answer(text="⏳✨")
+    message = update.effective_message
+    if message:
+        await message.reply_text("⏳✨ Запускаю мастер профиля")
+        await message.reply_text(f"{greeting}\n\n{faq}", reply_markup=_skip_keyboard())
     context.user_data["profile_draft"] = storage.Profile()
     return NAME
 
@@ -202,7 +213,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 def build_handler() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[CommandHandler("start", start_profile)],
+        entry_points=[
+            CommandHandler("start_profile", start_profile),
+            CallbackQueryHandler(start_profile, pattern=r"^action:calculate$"),
+        ],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_step)],
             GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gender_step)],
