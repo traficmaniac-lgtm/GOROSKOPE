@@ -5,7 +5,7 @@ from typing import Any
 
 from openai import OpenAI
 
-MIN_OUTPUT_TOKENS = 200
+MIN_OUTPUT_TOKENS = 300
 
 
 def get_text(response: Any) -> str:
@@ -40,7 +40,7 @@ class OpenAIClient:
     def ask(self, prompt: str, max_output_tokens: int = 400) -> str:
         response = self.client.responses.create(
             model=self.model,
-            input=prompt,
+            input=[{"role": "user", "content": prompt}],
             max_output_tokens=max(max_output_tokens, MIN_OUTPUT_TOKENS),
         )
         return get_text(response)

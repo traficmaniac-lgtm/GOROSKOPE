@@ -3,34 +3,24 @@
 Telegram-бот и Tkinter UI для быстрого MVP гороскопов.
 
 ## Что понадобится
+- Windows 10+
 - Python 3.11+
 - Токен Telegram Bot (BotFather → `/newbot` → HTTP API token)
 - `ADMIN_TELEGRAM_ID` — числовой `user_id` (узнать через @getmyid_bot)
 - Ключ OpenAI API (Responses API, openai>=2)
 
-## Установка
-1. (Опционально) создать виртуальное окружение `.venv` и установить зависимости:
-   ```bash
-   python -m venv .venv
-   .venv/Scripts/activate  # Windows PowerShell
-   pip install -r requirements.txt
-   ```
-2. Двойной клик по `run_ui.bat` (или `python -m ui.settings_ui`).
-3. В UI заполнить `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `OPENAI_MODEL` (по умолчанию `gpt-4o-mini`), `ADMIN_TELEGRAM_ID` и нажать **Save**.
-4. Кнопкой **Test OpenAI** отправить тест — ожидается ответ `OK`.
-5. Кнопками **Run Bot / Stop Bot** запускать и останавливать бота.
-
-Если `.venv` отсутствует, батники подскажут запустить `00_setup_repo.ps1`.
-
-## Запуск бота напрямую
-- Двойной клик по `run_bot.bat`, либо
-- `python -m app.bot`
+## Быстрый старт на Windows
+1. Склонируйте репозиторий и откройте папку `GOROSKOPE`.
+2. Дважды кликните `launcher.bat` и выберите **Run UI** (или запустите `run_ui.bat`).
+3. В появившемся окне заполните `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, при необходимости модель (`gpt-4o-mini` по умолчанию) и `ADMIN_TELEGRAM_ID`, затем нажмите **Save**.
+4. Нажмите **Test OpenAI** — должно вернуться `OK`. Если `.venv` отсутствует, запустите PowerShell команду `python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r requirements.txt` и попробуйте снова.
+5. Запустите бота кнопкой **Run Bot** (остановка — **Stop Bot**). Альтернатива: `run_bot.bat` или команда `python -m app.bot` из активированного окружения.
 
 ## Логика бота
 - `/start` — приветствие + FAQ, далее анкета (имя, пол, дата/время рождения, город, знак, тема дня).
 - `/today` — прогноз на сегодня.
 - `/week` — прогноз на неделю.
-- `/profile` — показать профиль и лимиты.
+- `/profile` или `/me` — показать профиль и лимиты.
 - `/reset` — сброс анкеты и счётчиков.
 - `/grant <user_id> <days>` — продление подписки (только для `ADMIN_TELEGRAM_ID`).
 
