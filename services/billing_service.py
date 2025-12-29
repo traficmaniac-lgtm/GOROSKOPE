@@ -21,6 +21,12 @@ def price_for_mode(mode: str) -> int:
     return base * 3
 
 
+def estimate_stars(prompt_len: int, model: str | None = None) -> int:
+    del model
+    tokens = max(prompt_len // 4, 1)
+    return max(tokens // 100, 1)
+
+
 def can_access(user_row: Dict, price: int) -> bool:
     if storage.subscription_active(user_row):
         return True
