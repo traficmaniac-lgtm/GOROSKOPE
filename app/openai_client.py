@@ -1,7 +1,31 @@
 """Simple OpenAI client for minimal chatbot flows."""
 from __future__ import annotations
 
+from typing import Any
+
 from openai import OpenAI
+
+
+def get_text(response: Any) -> str:
+    """Extract text from OpenAI Responses API response."""
+    if hasattr(response, "output_text") and response.output_text:
+        return str(response.output_text)
+
+    # Fallback: collect from output items
+    try:
+        parts: list[str] = []
+        for item in getattr(response, "output", []) or []:
+            content = getattr(item, "content", None) or []
+            for block in content:
+                text = getattr(block, "text", None)
+                if text:
+                    parts.append(str(text))
+        if parts:
+            return "\n".join(parts)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return "Не удалось разобрать ответ от OpenAI."
 
 
 class OpenAIClient:
@@ -14,22 +38,10 @@ class OpenAIClient:
     def ask(self, prompt: str, max_output_tokens: int = 150) -> str:
         response = self.client.responses.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            input=prompt,
             max_output_tokens=max_output_tokens,
         )
-        return self._extract_text(response)
-
-    @staticmethod
-    def _extract_text(response: object) -> str:
-        try:
-            message = response.output[0]
-            if hasattr(message, "content") and message.content:
-                text_block = message.content[0]
-                if hasattr(text_block, "text") and text_block.text:
-                    return text_block.text
-        except Exception:  # noqa: BLE001
-            pass
-        return "Не удалось разобрать ответ от OpenAI."
+        return get_text(response)
 
     def test_greeting(self) -> str:
-        return self.ask("Скажи одно короткое приветствие одним предложением.", max_output_tokens=60)
+        return self.ask("Say OK", max_output_tokens=10)
