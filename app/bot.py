@@ -10,9 +10,20 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    PreCheckoutQueryHandler,
+    filters,
+)
 
-from app import main_menu, profile_flow, storage
+from app import profile_flow, storage
+from callbacks import router
+from services.payments import stars
+from services.users import profile as user_profile
+from ui.menus import main_menu
 from app.openai_client import OpenAIClient
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,11 +62,8 @@ def build_application() -> Application:
     # Profile conversation
     app.add_handler(profile_flow.build_handler())
 
-    # Main menu
-    for handler in main_menu.build_handlers():
-        app.add_handler(handler)
-
     # Commands
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("today", today))
     app.add_handler(CommandHandler("week", week))
     app.add_handler(CommandHandler("reset", reset_profile))
@@ -65,9 +73,24 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("test", test_openai))
     app.add_handler(CommandHandler("ping", ping))
 
+    # Callback router
+    for handler in router.build_handlers():
+        app.add_handler(handler)
+
+    # Payments
+    app.add_handler(PreCheckoutQueryHandler(stars.handle_precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, stars.handle_successful_payment))
+
     app.add_error_handler(error_handler)
 
     return app
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = user_profile.ensure_user(update.effective_user.id)
+    is_new = user_profile.is_first_time(user)
+    await main_menu.render_main_menu(update, context, is_new)
+    user_profile.mark_returning(update.effective_user.id)
 
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -79,9 +102,12 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     profile = storage.Profile.from_dict(user.get("profile"))
     summary = storage.profile_summary(profile)
     free_left = user.get("free_uses", storage.DEFAULT_FREE_USES)
-    sub_until = int(user.get("sub_until", 0))
-    sub_text = "Есть активная" if storage.has_subscription(user) else "Нет"
-    if sub_until:
+    sub_until = int(user.get("premium_until") or user.get("sub_until", 0))
+    lifetime = bool(user.get("premium_lifetime"))
+    sub_text = "Есть активная" if storage.has_premium(user) else "Нет"
+    if lifetime:
+        sub_text += " (навсегда)"
+    elif sub_until:
         sub_text += f" (до {datetime.fromtimestamp(sub_until).strftime('%d.%m.%Y')})"
 
     await update.message.reply_text(
@@ -140,7 +166,7 @@ async def _generate_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.message.reply_text(str(exc))
         return
 
-    if not storage.has_subscription(user) and int(user.get("free_uses", 0)) <= 0:
+    if not storage.has_premium(user) and int(user.get("free_uses", 0)) <= 0:
         keyboard = InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="Связаться / Оплата скоро", url="https://t.me/")]]
         )
@@ -160,7 +186,7 @@ async def _generate_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return
 
     remaining = user.get("free_uses", storage.DEFAULT_FREE_USES)
-    if not storage.has_subscription(user):
+    if not storage.has_premium(user):
         remaining = storage.decrement_free_use(update.effective_user.id)
 
     await update.message.reply_text(
