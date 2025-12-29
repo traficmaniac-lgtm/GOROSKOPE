@@ -5,6 +5,8 @@ from typing import Any
 
 from openai import OpenAI
 
+MIN_OUTPUT_TOKENS = 128
+
 
 def get_text(response: Any) -> str:
     """Extract text from OpenAI Responses API response."""
@@ -35,13 +37,13 @@ class OpenAIClient:
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
-    def ask(self, prompt: str, max_output_tokens: int = 150) -> str:
+    def ask(self, prompt: str, max_output_tokens: int = 256) -> str:
         response = self.client.responses.create(
             model=self.model,
             input=prompt,
-            max_output_tokens=max_output_tokens,
+            max_output_tokens=max(max_output_tokens, MIN_OUTPUT_TOKENS),
         )
         return get_text(response)
 
     def test_greeting(self) -> str:
-        return self.ask("Say OK", max_output_tokens=10)
+        return self.ask("Say OK", max_output_tokens=MIN_OUTPUT_TOKENS)
