@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 import threading
@@ -7,19 +8,41 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from app.core.logging import LOG_FILE
+from app.tools.env_manager import EnvManager
+from app.services.health import validate_token_value
+
+
+logger = logging.getLogger(__name__)
+
 
 class BotRunner:
-    def __init__(self, log_file: str = "bot.log") -> None:
+    def __init__(self, log_file: Path | str | None = None) -> None:
         self.process: subprocess.Popen[bytes] | None = None
-        self.log_file = Path(log_file)
+        self.log_file = Path(log_file) if log_file else LOG_FILE
         self._stop_event = threading.Event()
         self._log_thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self.process and self.process.poll() is None:
-            return
+            raise RuntimeError("Бот уже запущен")
+
+        env_manager = EnvManager()
+        env = env_manager.load()
+        errors = env_manager.validate(env)
+        if errors:
+            raise RuntimeError("; ".join(errors))
+        validate_token_value(env.get("BOT_TOKEN", ""))
+
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.log_file.touch(exist_ok=True)
-        self.process = subprocess.Popen([sys.executable, "bot.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:
+            self.process = subprocess.Popen(
+                [sys.executable, "bot.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            )
+        except Exception as exc:  # pragma: no cover - runtime guard
+            logger.exception("Failed to start bot: %s", exc)
+            raise
         self._stop_event.clear()
 
     def stop(self) -> None:
@@ -31,7 +54,6 @@ class BotRunner:
         except subprocess.TimeoutExpired:
             self.process.kill()
         self.process = None
-        self._stop_event.set()
 
     def tail_logs(self, callback: Callable[[str], None], interval: float = 1.0) -> None:
         def _run() -> None:
