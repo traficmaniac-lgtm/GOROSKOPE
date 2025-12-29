@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from app import profile_flow, storage
+from app import main_menu, profile_flow, storage
 from app.openai_client import OpenAIClient
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,6 +50,10 @@ def build_application() -> Application:
 
     # Profile conversation
     app.add_handler(profile_flow.build_handler())
+
+    # Main menu
+    for handler in main_menu.build_handlers():
+        app.add_handler(handler)
 
     # Commands
     app.add_handler(CommandHandler("today", today))

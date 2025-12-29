@@ -73,6 +73,7 @@ def _default_user(user_id: int) -> Dict:
         "profile": Profile().to_dict(),
         "free_uses": DEFAULT_FREE_USES,
         "sub_until": 0,
+        "last_choice": "",
         "created_at": int(time.time()),
     }
 
@@ -83,7 +84,9 @@ def get_user(user_id: int) -> Dict:
     if key not in db:
         db[key] = _default_user(user_id)
         _save_db(db)
-    return db[key]
+    user = db[key]
+    user.setdefault("last_choice", "")
+    return user
 
 
 def save_user(user_id: int, data: Dict) -> None:
@@ -103,6 +106,13 @@ def reset_profile(user_id: int) -> None:
     user["profile"] = Profile().to_dict()
     user["free_uses"] = DEFAULT_FREE_USES
     user.setdefault("sub_until", 0)
+    user.setdefault("last_choice", "")
+    save_user(user_id, user)
+
+
+def update_last_choice(user_id: int, choice: str) -> None:
+    user = get_user(user_id)
+    user["last_choice"] = choice
     save_user(user_id, user)
 
 
