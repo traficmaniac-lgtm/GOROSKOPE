@@ -44,6 +44,7 @@ def init_storage() -> None:
         _ensure_column(conn, "users", "subscription_until", "INTEGER DEFAULT 0")
         _ensure_column(conn, "users", "settings_json", "TEXT DEFAULT '{}' ")
         _ensure_column(conn, "users", "free_remaining", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "history", "is_favorite", "INTEGER DEFAULT 0")
 
         conn.execute(
             """
@@ -57,7 +58,8 @@ def init_storage() -> None:
                 created_at INTEGER,
                 tokens_in INTEGER DEFAULT 0,
                 tokens_out INTEGER DEFAULT 0,
-                price_stars INTEGER DEFAULT 0
+                price_stars INTEGER DEFAULT 0,
+                is_favorite INTEGER DEFAULT 0
             )
             """
         )
@@ -129,15 +131,27 @@ def save_history(
     answer: str,
     tokens: Tuple[int, int],
     price_stars: int,
+    is_favorite: bool = False,
 ) -> int:
     now = int(time.time())
     with _connect() as conn:
         cur = conn.execute(
             """
-            INSERT INTO history (user_id, mode, subtype, payload_json, answer, created_at, tokens_in, tokens_out, price_stars)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO history (user_id, mode, subtype, payload_json, answer, created_at, tokens_in, tokens_out, price_stars, is_favorite)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, mode, subtype, json.dumps(payload, ensure_ascii=False), answer, now, tokens[0], tokens[1], price_stars),
+            (
+                user_id,
+                mode,
+                subtype,
+                json.dumps(payload, ensure_ascii=False),
+                answer,
+                now,
+                tokens[0],
+                tokens[1],
+                price_stars,
+                1 if is_favorite else 0,
+            ),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -175,3 +189,12 @@ def pop_draft(draft_id: int) -> Dict[str, Any] | None:
         return json.loads(row["payload_json"])
     except Exception:  # noqa: BLE001
         return None
+
+
+def mark_favorite(history_id: int, value: bool = True) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE history SET is_favorite = ? WHERE id = ?",
+            (1 if value else 0, history_id),
+        )
+        conn.commit()

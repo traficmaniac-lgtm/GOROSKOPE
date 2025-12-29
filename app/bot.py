@@ -21,6 +21,8 @@ from telegram.ext import (
 
 from app import profile_flow, storage
 from callbacks import router
+from handlers import horoscope_v2
+from services import storage as sql_storage
 from services.payments import stars
 from services.users import profile as user_profile
 from ui.menus import main_menu
@@ -52,6 +54,7 @@ def build_application() -> Application:
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN не задан. Заполни .env через UI и перезапусти бота.")
 
+    sql_storage.init_storage()
     app = Application.builder().token(token).concurrent_updates(True).build()
     app.bot_data.update({
         "openai_key": openai_key,
@@ -61,6 +64,9 @@ def build_application() -> Application:
 
     # Profile conversation
     app.add_handler(profile_flow.build_handler())
+
+    # Horoscope branch
+    app.add_handler(horoscope_v2.build_handler())
 
     # Commands
     app.add_handler(CommandHandler("start", start))
