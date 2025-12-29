@@ -16,15 +16,20 @@ from app.core.router import setup_routers
 from app.db.storage import Database
 from app.modules.horoscope.handlers import init_horoscope_services
 from app.services.ai_service import AIServiceError, resolve_ai_service
-from app.services.health import perform_startup_checks
+from app.services.health import StartupError, perform_startup_checks
 from app.services.payment_service import StubPaymentService
 from app.services.quota_service import QuotaService
 
 
 async def main() -> None:
-    setup_logging()
+    log_file = setup_logging()
     logger = logging.getLogger("bot")
-    perform_startup_checks()
+    try:
+        perform_startup_checks()
+    except StartupError:
+        logger.error("Бот остановлен из-за некорректных настроек.")
+        logger.info("Подробности см. в %s", log_file)
+        return
 
     db = Database(settings.db_path)
     await db.init()

@@ -19,6 +19,17 @@ class EnvManager:
             return []
         return self.path.read_text(encoding="utf-8").splitlines()
 
+    def create_from_example(self, example_path: Path | str = ".env.example") -> bool:
+        example = Path(example_path)
+        if not example.exists():
+            return False
+        self.path.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+        return True
+
+    def ensure_exists(self) -> None:
+        if not self.path.exists():
+            self.path.touch()
+
     def load(self) -> Dict[str, str]:
         env: Dict[str, str] = {}
         for line in self.read_raw_lines():

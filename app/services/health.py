@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import socket
-import sys
 from typing import Iterable
 
 from app.config.settings import settings
@@ -11,10 +9,15 @@ from app.services.ai_service import check_network_host
 logger = logging.getLogger(__name__)
 
 
-def _check_token(token: str) -> None:
+class StartupError(RuntimeError):
+    """Raised when mandatory startup checks fail."""
+
+
+def validate_token_value(token: str) -> None:
     if not token:
-        logger.error("BOT_TOKEN не задан. Установите его в .env или переменную окружения.")
-        sys.exit(1)
+        message = "BOT_TOKEN не задан. Установите его в .env или переменную окружения."
+        logger.error(message)
+        raise StartupError(message)
 
 
 def _check_openai_key() -> None:
@@ -39,6 +42,6 @@ def _check_network() -> None:
 
 
 def perform_startup_checks() -> None:
-    _check_token(settings.bot_token)
+    validate_token_value(settings.bot_token)
     _check_openai_key()
     _check_network()

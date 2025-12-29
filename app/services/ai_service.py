@@ -94,9 +94,13 @@ class AIResolution:
 def resolve_ai_service() -> AIResolution:
     if settings.use_openai:
         if settings.openai_api_key:
-            logger.info("AI mode: OpenAI (%s)", "gpt-4o-mini")
-            return AIResolution(OpenAIService(settings.openai_api_key), mode="openai")
-        logger.warning("USE_OPENAI=true, но OPENAI_API_KEY не задан. Переключаюсь на STUB.")
+            try:
+                logger.info("AI mode: OpenAI (%s)", "gpt-4o-mini")
+                return AIResolution(OpenAIService(settings.openai_api_key), mode="openai")
+            except Exception as exc:  # pragma: no cover - runtime guard
+                logger.warning("Не удалось инициализировать OpenAI: %s. Переключаюсь на STUB.", exc)
+        else:
+            logger.warning("USE_OPENAI=true, но OPENAI_API_KEY не задан. Переключаюсь на STUB.")
     logger.info("AI mode: STUB")
     return AIResolution(StubAIService(), mode="stub")
 

@@ -2,17 +2,41 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import platform
+import sys
+from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 from app.config.runtime import runtime_config
 from app.config.settings import settings
+from app.core.logging import LOG_DIR, LOG_FILE
 from app.services.ai_service import resolve_ai_service
 from app.services.prompt_builder import HoroscopeRequest, build_horoscope_prompt
 from app.tools.bot_runner import BotRunner
 from app.tools.editor_store import EditorStore
 from app.tools.env_manager import EnvManager
 from app.tools.simulator import HoroscopeSimulator
+
+LAUNCHER_LOG = LOG_DIR / "launcher.log"
+
+
+def setup_launcher_logging() -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger.setLevel(logging.INFO)
+    if logger.handlers:
+        return
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    file_handler = logging.FileHandler(LAUNCHER_LOG, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+
+logger = logging.getLogger("launcher")
 
 
 class LauncherGUI:
@@ -23,8 +47,11 @@ class LauncherGUI:
         self.editor_store = EditorStore()
         self.bot_runner = BotRunner()
         self.simulator = HoroscopeSimulator()
+        self.status_vars: dict[str, tk.StringVar] = {}
+        self._ensure_env_file()
         self._build_ui()
         self._load_env_values()
+        self._refresh_status_info()
         self.bot_runner.tail_logs(self._update_launch_logs)
 
     def _build_ui(self) -> None:
@@ -39,6 +66,20 @@ class LauncherGUI:
 
     def run(self) -> None:
         self.root.mainloop()
+
+    def _ensure_env_file(self) -> None:
+        if self.env_manager.path.exists():
+            return
+        created = False
+        example_path = Path(".env.example")
+        if example_path.exists():
+            if messagebox.askyesno(".env", "Файл .env не найден. Создать копию .env.example?"):
+                created = self.env_manager.create_from_example(example_path)
+                if created:
+                    logger.info("Создан .env из .env.example")
+        if not created:
+            self.env_manager.ensure_exists()
+            logger.info("Создан пустой .env")
 
     # --- Settings tab
     def _tab_settings(self, parent: ttk.Notebook) -> ttk.Frame:
@@ -75,6 +116,21 @@ class LauncherGUI:
         ttk.Label(frame, textvariable=self.openai_status, foreground="blue").grid(
             row=len(labels) + 1, column=1, sticky=tk.W
         )
+
+        status_frame = ttk.LabelFrame(frame, text="Статус")
+        status_frame.grid(row=len(labels) + 2, column=0, columnspan=2, sticky=tk.EW, pady=8)
+        status_items = {
+            "Python": f"{platform.python_version()} ({sys.executable})",
+            "Виртуальное окружение": str(Path(".venv").resolve()),
+            "Файл .env": str(self.env_manager.path.resolve()),
+            "База данных": str(self._db_path().resolve()),
+            "Логи": str(LOG_FILE.resolve()),
+        }
+        for idx, (label, value) in enumerate(status_items.items()):
+            ttk.Label(status_frame, text=label).grid(row=idx, column=0, sticky=tk.W, pady=2)
+            var = tk.StringVar(value=value)
+            self.status_vars[label] = var
+            ttk.Label(status_frame, textvariable=var).grid(row=idx, column=1, sticky=tk.W, pady=2)
         return frame
 
     def _load_env_values(self) -> None:
@@ -89,6 +145,22 @@ class LauncherGUI:
                 widget.delete(0, tk.END)
                 widget.insert(0, value)
 
+    def _db_path(self) -> Path:
+        env = self.env_manager.load()
+        return Path(env.get("DB_PATH") or settings.db_path)
+
+    def _refresh_status_info(self) -> None:
+        updates = {
+            "Python": f"{platform.python_version()} ({sys.executable})",
+            "Виртуальное окружение": str(Path(".venv").resolve()),
+            "Файл .env": str(self.env_manager.path.resolve()),
+            "База данных": str(self._db_path().resolve()),
+            "Логи": str(LOG_FILE.resolve()),
+        }
+        for key, value in updates.items():
+            if key in self.status_vars:
+                self.status_vars[key].set(value)
+
     def _save_env(self) -> None:
         values: dict[str, str] = {}
         for key, widget in self.settings_entries.items():
@@ -99,6 +171,8 @@ class LauncherGUI:
             elif isinstance(widget, tk.Entry):
                 values[key] = widget.get()
         self.env_manager.save(values)
+        logger.info(".env сохранён: %s", values.keys())
+        self._refresh_status_info()
         messagebox.showinfo("Готово", ".env сохранён")
 
     def _validate_env(self) -> None:
@@ -112,8 +186,10 @@ class LauncherGUI:
                 env[key] = widget.get()
         errors = self.env_manager.validate(env)
         if errors:
+            logger.warning("Проблемы в .env: %s", errors)
             messagebox.showwarning("Проблемы", "\n".join(errors))
         else:
+            logger.info(".env проверен, критичных проблем нет")
             messagebox.showinfo("OK", "Настройки выглядят корректно")
 
     def _check_openai(self) -> None:
@@ -128,15 +204,17 @@ class LauncherGUI:
         )
         prompt = build_horoscope_prompt(req)
 
-        async def _run() -> str:
+        async def _run() -> tuple[str, str]:
             resolution = resolve_ai_service()
-            return await resolution.service.generate(prompt)
+            return await resolution.service.generate(prompt), resolution.mode
 
         try:
-            result = asyncio.run(_run())
+            result, mode = asyncio.run(_run())
             self.openai_status.set(result[:180] + ("..." if len(result) > 180 else ""))
+            logger.info("OpenAI ping выполнен в режиме %s", mode)
         except Exception as exc:  # pragma: no cover - runtime guard
             self.openai_status.set(f"Ошибка: {exc}")
+            logger.exception("OpenAI ping error: %s", exc)
 
     # --- Test AI tab
     def _tab_test_ai(self, parent: ttk.Notebook) -> ttk.Frame:
@@ -206,8 +284,10 @@ class LauncherGUI:
                 result = await ai_resolution.service.generate(prompt)
                 self.ai_output.delete("1.0", tk.END)
                 self.ai_output.insert(tk.END, f"[{ai_resolution.mode}]\n{result}")
+                logger.info("AI тест выполнен в режиме %s", ai_resolution.mode)
             except Exception as exc:  # pragma: no cover - runtime guard
                 self.ai_error.set(str(exc))
+                logger.exception("AI тест завершился ошибкой: %s", exc)
 
         asyncio.run(_run())
 
@@ -291,21 +371,29 @@ class LauncherGUI:
         btn_frame.pack(fill=tk.X)
         ttk.Button(btn_frame, text="Запустить бота", command=self._start_bot).pack(side=tk.LEFT)
         ttk.Button(btn_frame, text="Остановить бота", command=self._stop_bot).pack(side=tk.LEFT, padx=5)
+        ttk.Label(frame, text=f"Лог: {LOG_FILE}").pack(anchor=tk.W, pady=2)
         self.launch_logs = tk.Text(frame, height=20)
         self.launch_logs.pack(fill=tk.BOTH, expand=True, pady=6)
         return frame
 
     def _start_bot(self) -> None:
-        self.bot_runner.start()
-        messagebox.showinfo("Бот", "Бот запущен")
+        try:
+            self.bot_runner.start()
+            messagebox.showinfo("Бот", "Бот запущен")
+            logger.info("Бот запущен из GUI")
+        except Exception as exc:  # pragma: no cover - runtime guard
+            logger.exception("Не удалось запустить бота: %s", exc)
+            messagebox.showerror("Ошибка", f"Не удалось запустить бота: {exc}")
 
     def _stop_bot(self) -> None:
         self.bot_runner.stop()
+        logger.info("Бот остановлен")
         messagebox.showinfo("Бот", "Бот остановлен")
 
     def _update_launch_logs(self, text: str) -> None:
+        tail = "\n".join(text.splitlines()[-200:])
         self.launch_logs.delete("1.0", tk.END)
-        self.launch_logs.insert(tk.END, text)
+        self.launch_logs.insert(tk.END, tail)
 
     # --- Editor tab
     def _tab_editor(self, parent: ttk.Notebook) -> ttk.Frame:
@@ -360,5 +448,13 @@ class LauncherGUI:
 
 
 def start_gui() -> None:
-    LauncherGUI().run()
+    setup_launcher_logging()
+    try:
+        LauncherGUI().run()
+    except Exception as exc:  # pragma: no cover - runtime guard
+        logger.exception("Launcher crashed: %s", exc)
+        try:
+            messagebox.showerror("Launcher error", str(exc))
+        except Exception:
+            print(f"Launcher error: {exc}")
 

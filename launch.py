@@ -14,9 +14,13 @@ from app.tools.launcher_gui import start_gui
 
 def run_bot_cli() -> None:
     from bot import main
-    from app.services.health import perform_startup_checks
+    from app.services.health import StartupError, perform_startup_checks
 
-    perform_startup_checks()
+    try:
+        perform_startup_checks()
+    except StartupError as exc:
+        print(f"Ошибка запуска бота: {exc}")
+        return
     asyncio.run(main())
 
 
