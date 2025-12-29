@@ -14,6 +14,20 @@ from ui.menus import main_menu
 logger = logging.getLogger(__name__)
 
 
+def _inline_markup_dict(markup: InlineKeyboardMarkup | None) -> Optional[Dict]:
+    return markup.to_dict() if markup else None
+
+
+async def _safe_edit_message(message, text: str, reply_markup: InlineKeyboardMarkup | None = None):
+    """Avoid Telegram's `Message is not modified` error by skipping noop edits."""
+
+    current_text = message.text or message.caption or ""
+    if current_text == text and _inline_markup_dict(message.reply_markup) == _inline_markup_dict(reply_markup):
+        return message
+
+    return await message.edit_text(text, reply_markup=reply_markup)
+
+
 SELECT_FORMAT, PERSONAL_FOCUS, PERSONAL_QUESTION, CONFIRM, STYLE, PAYWALL = range(6)
 
 FORMAT_LABELS = {
@@ -375,7 +389,8 @@ async def run_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     footer = f"\n— GOROSKOPE • tokens: {tokens[0] + tokens[1]} • cost: {cost} ⭐"
     if update.effective_message:
-        await update.effective_message.edit_text(
+        await _safe_edit_message(
+            update.effective_message,
             (result.get("answer", "") or "") + footer,
             reply_markup=_result_keyboard(),
         )
@@ -395,7 +410,8 @@ async def pay_with_stars(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     balance = int(user_row.get("stars_balance", 0))
     if balance < price:
         if update.effective_message:
-            await update.effective_message.edit_text(
+            await _safe_edit_message(
+                update.effective_message,
                 "Недостаточно звёзд. Попробуй подписку или пополнение.",
                 reply_markup=_paywall_keyboard(),
             )
