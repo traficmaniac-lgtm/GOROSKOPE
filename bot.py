@@ -26,8 +26,8 @@ async def main() -> None:
     logger = logging.getLogger("bot")
     try:
         perform_startup_checks()
-    except StartupError:
-        logger.error("Бот остановлен из-за некорректных настроек.")
+    except StartupError as exc:
+        logger.error("Бот остановлен: %s", exc)
         logger.info("Подробности см. в %s", log_file)
         return
 
