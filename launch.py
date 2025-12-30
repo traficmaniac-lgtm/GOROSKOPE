@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
+import subprocess
 import sys
 
 from app.config.runtime import runtime_config
 from app.services.ai_service import resolve_ai_service
 from app.services.prompt_builder import HoroscopeRequest, build_horoscope_prompt
 from app.tools.env_manager import EnvManager
-from app.tools.launcher_gui import start_gui
+from app.tools.launcher_gui import LAUNCHER_LOG, setup_launcher_logging, start_gui
 
 
 def run_bot_cli() -> None:
@@ -56,11 +58,34 @@ def print_env() -> None:
     print("Overrides:", runtime_config.overrides_path)
 
 
+def run_selftest() -> None:
+    """Запуск встроенного набора проверок без GUI."""
+
+    command = [sys.executable, "tools/selftest.py"]
+    print("Запускаю selftest:", " ".join(command))
+    try:
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        print("tools/selftest.py не найден. Убедитесь, что файл на месте.")
+        return
+
+    if result.stdout:
+        print(result.stdout.strip())
+    if result.stderr:
+        print(result.stderr.strip())
+
+    if result.returncode == 0:
+        print("SELFTEST: OK")
+    else:
+        print(f"SELFTEST завершился с кодом {result.returncode}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="GOROSKOPE launcher")
     parser.add_argument("--run-bot", action="store_true", help="Запустить бота без GUI")
     parser.add_argument("--test-ai", action="store_true", help="Проверить AI и промпт")
     parser.add_argument("--print-env", action="store_true", help="Показать настройки")
+    parser.add_argument("--selftest", action="store_true", help="Запустить самопроверку")
     args = parser.parse_args()
 
     if args.run_bot:
@@ -72,8 +97,23 @@ def main() -> None:
     if args.print_env:
         print_env()
         return
+    if args.selftest:
+        run_selftest()
+        return
 
-    start_gui()
+    setup_launcher_logging()
+    try:
+        start_gui()
+    except Exception as exc:  # pragma: no cover - runtime guard
+        logging.getLogger("launcher").exception("GUI failed: %s", exc)
+        try:
+            from tkinter import messagebox
+
+            messagebox.showerror(
+                "Launcher error", f"{exc}\nОткройте {LAUNCHER_LOG} для деталей"
+            )
+        except Exception:
+            print(f"Launcher error: {exc}. Подробности: {LAUNCHER_LOG}")
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ setlocal EnableExtensions
 set LOG=logs\setup.log
 if not exist logs mkdir logs
 
-echo ===== GOROSKOPE START_LAUNCHER ===== > %LOG%
-echo [%date% %time%] Старт лаунчера >> %LOG%
+echo ===== GOROSKOPE START_ALL ===== > %LOG%
+echo [%date% %time%] Старт установки >> %LOG%
 
 where py >> %LOG% 2>>&1
 if errorlevel 1 (
@@ -31,7 +31,7 @@ if errorlevel 1 (
   goto :eof
 )
 
-echo Проверяю .venv... >> %LOG%
+echo Проверяю/создаю виртуальное окружение... >> %LOG%
 set PYTHON_CMD=py -3.12
 set VENV_PY=.venv\Scripts\python.exe
 

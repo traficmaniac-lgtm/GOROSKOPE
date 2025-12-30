@@ -3,16 +3,27 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import platform
+import subprocess
 import sys
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from aiogram import Bot
+from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest, TelegramUnauthorizedError
+
 from app.config.runtime import runtime_config
 from app.config.settings import settings
 from app.core.logging import LOG_DIR, LOG_FILE
-from app.services.ai_service import resolve_ai_service
+from app.services.ai_service import (
+    AIServiceError,
+    OpenAIService,
+    StubAIService,
+    resolve_ai_service,
+)
 from app.services.prompt_builder import HoroscopeRequest, build_horoscope_prompt
 from app.tools.bot_runner import BotRunner
 from app.tools.editor_store import EditorStore
@@ -48,6 +59,7 @@ class LauncherGUI:
         self.bot_runner = BotRunner()
         self.simulator = HoroscopeSimulator()
         self.status_vars: dict[str, tk.StringVar] = {}
+        self.diagnostic_vars: dict[str, tk.StringVar] = {}
         self._ensure_env_file()
         self._build_ui()
         self._load_env_values()
@@ -59,6 +71,7 @@ class LauncherGUI:
         notebook.pack(fill=tk.BOTH, expand=True)
 
         notebook.add(self._tab_settings(notebook), text="Настройки")
+        notebook.add(self._tab_diagnostics(notebook), text="Диагностика")
         notebook.add(self._tab_test_ai(notebook), text="Тест AI")
         notebook.add(self._tab_simulator(notebook), text="Симулятор")
         notebook.add(self._tab_launch(notebook), text="Запуск")
@@ -119,14 +132,7 @@ class LauncherGUI:
 
         status_frame = ttk.LabelFrame(frame, text="Статус")
         status_frame.grid(row=len(labels) + 2, column=0, columnspan=2, sticky=tk.EW, pady=8)
-        status_items = {
-            "Python": f"{platform.python_version()} ({sys.executable})",
-            "Виртуальное окружение": str(Path(".venv").resolve()),
-            "Файл .env": str(self.env_manager.path.resolve()),
-            "База данных": str(self._db_path().resolve()),
-            "Логи": str(LOG_FILE.resolve()),
-        }
-        for idx, (label, value) in enumerate(status_items.items()):
+        for idx, (label, value) in enumerate(self._diagnostic_info().items()):
             ttk.Label(status_frame, text=label).grid(row=idx, column=0, sticky=tk.W, pady=2)
             var = tk.StringVar(value=value)
             self.status_vars[label] = var
@@ -150,16 +156,52 @@ class LauncherGUI:
         return Path(env.get("DB_PATH") or settings.db_path)
 
     def _refresh_status_info(self) -> None:
-        updates = {
-            "Python": f"{platform.python_version()} ({sys.executable})",
-            "Виртуальное окружение": str(Path(".venv").resolve()),
-            "Файл .env": str(self.env_manager.path.resolve()),
-            "База данных": str(self._db_path().resolve()),
-            "Логи": str(LOG_FILE.resolve()),
-        }
+        updates = self._diagnostic_info()
         for key, value in updates.items():
             if key in self.status_vars:
                 self.status_vars[key].set(value)
+            if key in self.diagnostic_vars:
+                self.diagnostic_vars[key].set(value)
+
+    def _diagnostic_info(self) -> dict[str, str]:
+        venv_python = Path(".venv") / ("Scripts" if os.name == "nt" else "bin") / "python.exe"
+        return {
+            "Python": f"{platform.python_version()} ({sys.executable})",
+            "Виртуальное окружение": f"{venv_python} ({'есть' if venv_python.exists() else 'нет'})",
+            "Файл .env": f"{self.env_manager.path.resolve()} ({'есть' if self.env_manager.path.exists() else 'нет'})",
+            "База данных": str(self._db_path().resolve()),
+            "Каталог logs": str(LOG_DIR.resolve()),
+        }
+
+    def _tab_diagnostics(self, parent: ttk.Notebook) -> ttk.Frame:
+        frame = ttk.Frame(parent, padding=10)
+
+        env_frame = ttk.LabelFrame(frame, text="Среда")
+        env_frame.pack(fill=tk.X, pady=4)
+        for idx, (label, value) in enumerate(self._diagnostic_info().items()):
+            ttk.Label(env_frame, text=label).grid(row=idx, column=0, sticky=tk.W, pady=2)
+            var = tk.StringVar(value=value)
+            self.diagnostic_vars[label] = var
+            ttk.Label(env_frame, textvariable=var).grid(row=idx, column=1, sticky=tk.W, pady=2)
+
+        btn_frame = ttk.LabelFrame(frame, text="Проверки")
+        btn_frame.pack(fill=tk.X, pady=8)
+        ttk.Button(btn_frame, text="Проверить зависимости", command=self._check_dependencies).grid(
+            row=0, column=0, sticky=tk.W, pady=3
+        )
+        ttk.Button(btn_frame, text="Проверить токен Telegram", command=self._check_bot_token).grid(
+            row=1, column=0, sticky=tk.W, pady=3
+        )
+        ttk.Button(btn_frame, text="Проверить OpenAI", command=self._check_openai_ping).grid(
+            row=2, column=0, sticky=tk.W, pady=3
+        )
+        ttk.Button(btn_frame, text="Открыть логи", command=self._open_logs_folder).grid(
+            row=3, column=0, sticky=tk.W, pady=3
+        )
+
+        self.diag_status = tk.StringVar(value="Готово")
+        ttk.Label(frame, textvariable=self.diag_status, foreground="blue").pack(anchor=tk.W, pady=6)
+        return frame
 
     def _save_env(self) -> None:
         values: dict[str, str] = {}
@@ -192,8 +234,74 @@ class LauncherGUI:
             logger.info(".env проверен, критичных проблем нет")
             messagebox.showinfo("OK", "Настройки выглядят корректно")
 
-    def _check_openai(self) -> None:
+    def _set_diag_status(self, text: str, *, warn: bool = False) -> None:
+        if hasattr(self, "diag_status"):
+            self.diag_status.set(text)
+        if warn:
+            logger.warning(text)
+        else:
+            logger.info(text)
+
+    def _check_dependencies(self) -> None:
+        cmd = [
+            sys.executable,
+            "-c",
+            "import aiogram, pydantic, pydantic_settings, aiosqlite; print('OK')",
+        ]
+        self._set_diag_status("Проверяю зависимости...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0 and "OK" in result.stdout:
+            messagebox.showinfo("Зависимости", "aiogram/pydantic/aiosqlite доступны")
+            logger.info("Проверка зависимостей: OK (%s)", result.stdout.strip())
+            self._set_diag_status("Зависимости: OK")
+        else:
+            output = (result.stdout + result.stderr).strip()
+            messagebox.showerror("Зависимости", f"Проблема: {output}")
+            logger.error("Проблема с зависимостями: %s", output)
+            self._set_diag_status("Зависимости: ошибка", warn=True)
+
+    def _check_bot_token(self) -> None:
+        env_settings = self.env_manager.load_settings()
+        token = env_settings.bot_token
+        if not token:
+            message = "BOT_TOKEN пуст. Укажите токен в .env"
+            logger.error(message)
+            messagebox.showerror("Telegram", message)
+            self._set_diag_status(message, warn=True)
+            return
+
+        async def _run() -> str:
+            bot = Bot(token=token, parse_mode=ParseMode.HTML)
+            me = await bot.get_me()
+            await bot.session.close()
+            return f"@{me.username}" if me.username else str(me.id)
+
+        try:
+            identifier = asyncio.run(_run())
+            message = f"BOT_TOKEN OK: {identifier}"
+            messagebox.showinfo("Telegram", message)
+            logger.info(message)
+            self._set_diag_status(message)
+        except TelegramUnauthorizedError as exc:
+            message = "BOT_TOKEN отклонен: проверьте значение"
+            logger.error("%s (%s)", message, exc)
+            messagebox.showerror("Telegram", message)
+            self._set_diag_status(message, warn=True)
+        except TelegramBadRequest as exc:
+            message = f"Ошибка запроса к Telegram: {exc}"
+            logger.error(message)
+            messagebox.showerror("Telegram", message)
+            self._set_diag_status(message, warn=True)
+        except Exception as exc:  # pragma: no cover - runtime guard
+            logger.exception("Не удалось проверить токен: %s", exc)
+            messagebox.showerror("Telegram", f"Не удалось проверить токен: {exc}")
+            self._set_diag_status("Проверка токена завершилась ошибкой", warn=True)
+
+    def _check_openai_ping(self) -> None:
         self.openai_status.set("Выполняю запрос...")
+        env = self.env_manager.load()
+        use_openai = env.get("USE_OPENAI", "false").lower() == "true"
+        api_key = env.get("OPENAI_API_KEY", "")
         req = HoroscopeRequest(
             mode="Технический пинг",
             birth_date="01.01.2000",
@@ -204,17 +312,63 @@ class LauncherGUI:
         )
         prompt = build_horoscope_prompt(req)
 
-        async def _run() -> tuple[str, str]:
-            resolution = resolve_ai_service()
-            return await resolution.service.generate(prompt), resolution.mode
+        if use_openai and not api_key:
+            message = "USE_OPENAI=true, но OPENAI_API_KEY пуст — укажите ключ"
+            logger.error(message)
+            messagebox.showerror("OpenAI", message)
+            self.openai_status.set(message)
+            self._set_diag_status(message, warn=True)
+            return
+
+        if use_openai and api_key:
+            try:
+                service = OpenAIService(api_key)
+                mode = "openai"
+            except Exception as exc:  # pragma: no cover - runtime guard
+                logger.exception("OpenAI SDK не инициализировался: %s", exc)
+                messagebox.showerror("OpenAI", f"Не удалось инициализировать OpenAI: {exc}")
+                self.openai_status.set(str(exc))
+                self._set_diag_status("OpenAI не готов", warn=True)
+                return
+        else:
+            service = StubAIService()
+            mode = "stub"
+
+        async def _run() -> str:
+            return await service.generate(prompt)
 
         try:
-            result, mode = asyncio.run(_run())
+            result = asyncio.run(_run())
             self.openai_status.set(result[:180] + ("..." if len(result) > 180 else ""))
             logger.info("OpenAI ping выполнен в режиме %s", mode)
+            self._set_diag_status(f"OpenAI: {mode}")
+        except AIServiceError as exc:
+            self.openai_status.set(f"Ошибка: {exc}")
+            logger.error("OpenAI ping error: %s", exc)
+            messagebox.showerror("OpenAI", str(exc))
+            self._set_diag_status("OpenAI ошибка", warn=True)
         except Exception as exc:  # pragma: no cover - runtime guard
             self.openai_status.set(f"Ошибка: {exc}")
             logger.exception("OpenAI ping error: %s", exc)
+            messagebox.showerror("OpenAI", str(exc))
+            self._set_diag_status("OpenAI ошибка", warn=True)
+
+    def _check_openai(self) -> None:
+        self._check_openai_ping()
+
+    def _open_logs_folder(self) -> None:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        path = LOG_DIR.resolve()
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+            logger.info("Открыт каталог логов: %s", path)
+            self._set_diag_status(f"Логи: {path}")
+        except Exception as exc:  # pragma: no cover - runtime guard
+            logger.exception("Не удалось открыть каталог логов: %s", exc)
+            messagebox.showerror("Логи", f"Не удалось открыть каталог логов: {exc}")
 
     # --- Test AI tab
     def _tab_test_ai(self, parent: ttk.Notebook) -> ttk.Frame:
@@ -454,7 +608,7 @@ def start_gui() -> None:
     except Exception as exc:  # pragma: no cover - runtime guard
         logger.exception("Launcher crashed: %s", exc)
         try:
-            messagebox.showerror("Launcher error", str(exc))
+            messagebox.showerror("Launcher error", f"{exc}\nОткройте {LAUNCHER_LOG} для деталей")
         except Exception:
             print(f"Launcher error: {exc}")
 

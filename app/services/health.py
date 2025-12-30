@@ -14,9 +14,14 @@ class StartupError(RuntimeError):
 
 
 def validate_token_value(token: str) -> None:
+    token_hint = token[:4] + "..." + token[-4:] if len(token) > 8 else token
     if not token:
         message = "BOT_TOKEN не задан. Установите его в .env или переменную окружения."
         logger.error(message)
+        raise StartupError(message)
+    if token.startswith("1234") or len(token) < 30:
+        message = "BOT_TOKEN выглядит некорректно: проверьте, что скопировали токен целиком."
+        logger.error("%s (текущее начало: %s)", message, token_hint)
         raise StartupError(message)
 
 
@@ -43,5 +48,7 @@ def _check_network() -> None:
 
 def perform_startup_checks() -> None:
     validate_token_value(settings.bot_token)
+    if not settings.db_path:
+        raise StartupError("DB_PATH не задан. Укажите путь к SQLite файлу в .env")
     _check_openai_key()
     _check_network()
